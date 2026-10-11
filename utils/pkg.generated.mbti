@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "username/utils"
+
+// Values
+pub async fn download_file(String, String, backup_url? : String) -> String
+
+pub fn qwen3_model_dir() -> String
+
+// Errors
+pub(all) suberror DownloadError {
+  BadStatus(Int, String)
+  TooManyRedirects(String)
+  DownloadFailed(String)
+  BadRedirect(String)
+}
+
+// Types and methods
+
+// Type aliases
+
+// Traits
