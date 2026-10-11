@@ -1,0 +1,6 @@
+import {
+  "moonbitlang/core/argparse",
+  "zw/playground",
+}
+
+pkgtype(kind: "executable")

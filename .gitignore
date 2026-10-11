@@ -1,0 +1,12 @@
+# MoonBit build artifacts
+_build/
+target/
+
+# Package registry cache (per-project, if created)
+.mooncakes/
+
+# Editor / tooling state
+.moonagent/
+
+# OS noise
+.DS_Store
