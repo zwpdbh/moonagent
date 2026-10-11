@@ -1,4 +1,5 @@
 members = [
   "./playground",
   "./utils",
+  "./qwen3"
 ]
