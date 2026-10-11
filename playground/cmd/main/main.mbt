@@ -25,6 +25,7 @@ fn main {
       ]),
     ],
   )
+
   let matches = cmd.parse() catch {
     e => {
       println(e)

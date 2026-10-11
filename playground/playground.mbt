@@ -7,3 +7,17 @@
 pub fn greet(name : String) -> String {
   "Hello, \{name}! (from the playground library package)"
 }
+
+///|
+/// Helper not marked pub — invisible outside this package, but testable here.
+fn shout(s : String) -> String {
+  s.to_upper()
+}
+
+///|
+/// Inline test (Rust: #[test] in the same file). Lives next to the code,
+/// can see private items like `shout`.
+test "shout uppercases" {
+  assert_eq(shout("moon"), "MOON")
+}
+
