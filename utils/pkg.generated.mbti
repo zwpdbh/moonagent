@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "username/utils"
+package "zw/utils"
 
 // Values
 pub async fn download_file(String, String, backup_url? : String) -> String
