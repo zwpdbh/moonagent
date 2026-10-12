@@ -94,10 +94,12 @@ pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
 
 ///|
 /// Load tokenizer.json from disk, then parse.
-#warnings("-unused_async-unused_error_type")
-pub async fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
-  ignore(path)
-  abort("TODO: read file contents, delegate to parse")
+pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
+  let content = @fs.read_file_to_string(path) catch {
+    @fs.IOError(msg) =>
+      raise InvalidFormat("cannot read file \{path}, error: \{msg}")
+  }
+  Tokenizer::parse(content)
 }
 
 ///|
@@ -190,4 +192,11 @@ test "parse folds added_tokens into both maps" {
   let tok = Tokenizer::parse(snippet)
   assert_eq(tok.vocab.get("<|endoftext|>"), Some(2))
   assert_eq(tok.ids[2], "<|endoftext|>")
+}
+
+///|
+test "load real tokenizer.json" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.vocab.length(), 151669) // 151643 vocab + 26 added
+  assert_eq(tok.ids[151645], "<|im_end|>")
 }
