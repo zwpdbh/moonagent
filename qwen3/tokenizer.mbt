@@ -30,13 +30,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
   guard json is Json::Object(obj) else {
     raise @json.JsonDecodeError((path, "QwenTokenizerModel: expected object"))
   }
-  let vocab : Map[String, Int] = match obj.get("vocab") {
-    Some(v) => @json.from_json(v, path=path.add_key("vocab"))
-    None =>
-      raise @json.JsonDecodeError(
-        (path.add_key("vocab"), "missing \"vocab\" field"),
-      )
-  }
+  let vocab : Map[String, Int] = field(obj, "vocab", path)
   let model_type : String = match obj.get("type") {
     Some(t) => @json.from_json(t, path=path.add_key("type"))
     None =>
@@ -51,6 +45,8 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
 /// Mirror of the "pre_tokenizer" section — an externally-tagged enum:
 /// the JSON "type" field picks the variant.
 priv enum PreTokenizer {
+  // The key is when match on Sequence, it matches on Array of itself which 
+  // then go further matching on Split and ByteLevel
   Sequence(Array[PreTokenizer])
   Split(pattern~ : String, behavior~ : String, invert~ : Bool)
   ByteLevel(add_prefix_space~ : Bool, trim_offsets~ : Bool, use_regex~ : Bool)
@@ -74,6 +70,7 @@ fn[T : FromJson] field(
 }
 
 ///|
+/// Notice path grows as you descend during recurisve parse
 impl FromJson for PreTokenizer with fn from_json(json, path) {
   guard json is Json::Object(obj) else {
     raise @json.JsonDecodeError((path, "PreTokenizer: expected object"))
@@ -174,10 +171,57 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 
 ///|
 /// Text -> token ids.
+/// Step 1: Use PreTokenizer's regex_pattern to split into chunks
+/// Step 2: Byte-level mapping (bytes → alphabet chars)
+/// Step 3: The BPE merge loop (per chunk)
+/// Step 4: Token → id
 pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int] {
   ignore(self)
   ignore(text)
   abort("TODO: pre-tokenize + BPE merges")
+}
+
+///|
+/// Split text into pre-tokenizer chunks (the "Split" step of the pipeline).
+/// NOTE: regex matches ARE the chunks (Isolated behavior), not delimiters.
+/// Implement by hand-rolling the alternation branches in order:
+/// contractions | optional-punct+letters | digit | space+punct-run |
+/// newlines | trailing-ws | whitespace.
+fn split_text(text : String) -> Array[String] {
+  ignore(text)
+  [] // TODO: hand-rolled pre-tokenizer splitter (placeholder: always wrong)
+}
+
+///|
+/// Map a chunk's UTF-8 bytes to the byte-level alphabet chars:
+/// printable bytes map to themselves, others (space, control, >= 0x80)
+/// map to chars in the 0x100+ range (space 0x20 -> 'Ġ').
+/// (The reverse mapping is what `decode` will need.)
+fn to_byte_chars(chunk : String) -> String {
+  ignore(chunk)
+  "" // TODO: byte -> alphabet char mapping (placeholder: always wrong)
+}
+
+///|
+/// Run the BPE merge loop on one chunk (starts as single-char strings):
+/// repeatedly merge the adjacent pair with the lowest rank until no
+/// adjacent pair exists in `merges`. Merges never cross chunks.
+fn bpe_merge(
+  chars : Array[String],
+  merges : Map[(String, String), Int],
+) -> Array[String] {
+  ignore(merges)
+  chars // TODO: greedy-by-rank merge loop (placeholder: never merges)
+}
+
+///|
+/// Parse the "merges" array from tokenizer.json's model section into
+/// pair -> rank (rank = position in the array, lower merges first).
+/// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
+#warnings("-unused_error_type")
+fn parse_merges(json : Json) -> Map[(String, String), Int] raise TokenizerError {
+  ignore(json)
+  Map([]) // TODO: pair array -> rank map (placeholder: always empty)
 }
 
 ///|
@@ -305,4 +349,63 @@ test "pre_tokenizer decodes Sequence of Split + ByteLevel" {
   assert_eq(add_prefix_space, false)
   assert_eq(use_regex, false)
   assert_eq(trim_offsets, false)
+}
+
+///|
+test "split_text chunks plain words and keeps leading space" {
+  assert_eq(split_text("Explain large language models."), [
+    "Explain", " large", " language", " models", ".",
+  ])
+}
+
+///|
+test "split_text splits off contractions" {
+  assert_eq(split_text("don't"), ["don", "'t"])
+  assert_eq(split_text("I'm"), ["I", "'m"])
+}
+
+///|
+test "split_text splits digits one by one" {
+  assert_eq(split_text("3.14"), ["3", ".", "1", "4"])
+}
+
+///|
+test "to_byte_chars maps space to Ġ, keeps letters" {
+  assert_eq(to_byte_chars(" large"), "Ġlarge")
+  assert_eq(to_byte_chars("Explain"), "Explain")
+}
+
+///|
+test "bpe_merge replays merges by rank" {
+  // ranks: (E,x)=0 merges before (p,l)=1 etc.
+  let merges : Map[(String, String), Int] = Map([])
+  merges[("E", "x")] = 0
+  merges[("Ex", "p")] = 5 // must NOT win over lower ranks
+  merges[("p", "l")] = 1
+  merges[("pl", "a")] = 2
+  merges[("pla", "i")] = 3
+  merges[("plai", "n")] = 4
+  assert_eq(bpe_merge(["E", "x", "p", "l", "a", "i", "n"], merges), [
+    "Ex", "plain",
+  ])
+}
+
+///|
+test "bpe_merge merges a single known pair" {
+  let merges : Map[(String, String), Int] = Map([])
+  merges[("a", "b")] = 0
+  assert_eq(bpe_merge(["a", "b", "c"], merges), ["ab", "c"])
+}
+
+///|
+test "parse_merges builds pair -> rank from json pairs" {
+  let j = @json.parse(
+    (
+      #|[["Ġ", "t"], ["i", "n"], ["e", "r"]]
+    ),
+  )
+  let merges = parse_merges(j)
+  assert_eq(merges.get(("Ġ", "t")), Some(0))
+  assert_eq(merges.get(("i", "n")), Some(1))
+  assert_eq(merges.get(("e", "r")), Some(2))
 }
