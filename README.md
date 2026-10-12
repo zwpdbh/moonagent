@@ -76,7 +76,7 @@ the implementation is yours to write.
 LLMs don't read text; they read sequences of integer ids. The tokenizer is the
 dictionary between the two: `encode("Explain large language models.")` →
 `[840, 20772, 3460, 4128, 4119, 13]`, and `decode` goes back. Qwen3 uses
-**byte-level BPE** (byte-pair encoding): a vocabulary of 151,936 tokens where
+**byte-level BPE** (byte-pair encoding): a vocabulary of 151,936 slots (151,669 known tokens) where
 common character sequences merge into single tokens, and any byte can always
 be represented (so encoding *never* fails on weird input).
 
@@ -86,7 +86,7 @@ The dictionary ships as `tokenizer.json` (already at
 ```bash
 jq 'keys'                  ~/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json
 jq '.model | keys'         ~/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json
-jq '.model.vocab | length' ~/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json   # 151936
+jq '.model.vocab | length' ~/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json   # 151643
 ```
 
 ### What `parse` must do
@@ -132,16 +132,28 @@ Steps:
    - MoonBit notes: create with `Map([])` (a bare `{}` literal is ambiguous);
      iterate a JSON object with `for token, id in vocab_json`; each value must
      be `Json::Number` — guard it too.
-   - Sanity check: the map should end up with **151,936** entries for the real
-     file (matches `vocab_size` in `config.json`).
+   - Sanity check: `model.vocab` has **151,643** entries (the BPE-learned
+     vocab, ids 0–151642). Note this is *not* `config.json`'s
+     `vocab_size = 151936` — see step 4.
 
-4. **Build the reverse index for `decode`**: an `Array[String]` where position
-   `i` holds the token whose id is `i`. Add it as a second field of
-   `struct Tokenizer` (e.g. `ids : Array[String]`) and fill it from the vocab
-   map. (`encode` needs token→id, `decode` needs id→token — one JSON object
-   gives you both.)
+4. **Fold in `added_tokens`.** The top-level `added_tokens` array holds 26
+   *special* tokens (`<|endoftext|>`, `<|im_start|>`, `<|im_end|>`, …) that
+   were registered after BPE training and are NOT in `model.vocab`. Each entry
+   is `{"id": N, "content": "<|...|>", "special": true, ...}` with ids
+   151643–151668. For each one: `vocab[content] = id` and `ids[id] = content`.
+   (Encoding treats them specially — matched verbatim, bypassing BPE — but
+   that's `encode`'s problem, later. `parse` just records them. If
+   `added_tokens` is missing, treat it as an empty list, not an error.)
 
-5. **Return the struct**: `{ vocab, ids }` — struct literal syntax; fields are
+5. **Build the reverse index for `decode`**: an `Array[String]` where position
+   `i` holds the token whose id is `i`. Size it to **151,936** (the model's
+   padded `vocab_size`), fill from vocab + added_tokens; the unused tail
+   (151669+) may stay empty strings — `decode` will `raise UnknownToken` for
+   those anyway. (`encode` needs token→id, `decode` needs id→token — the JSON
+   gives you each fact once; store both directions. Generation will *emit*
+   `<|endoftext|>` (151643) as its stop signal, so decode must know it.)
+
+6. **Return the struct**: `{ vocab, ids }` — struct literal syntax; fields are
    visible because you're inside the defining package. Outside, the struct
    stays opaque (that's the point of it not being `pub`).
 
@@ -163,8 +175,8 @@ items and don't ship in release builds):
 - `"not json"` raises `InvalidFormat` (catch it in the test and assert).
 - `{}` (missing `model`) raises `InvalidFormat`.
 
-Then the real file: `Tokenizer::load` + vocab length = 151936 (that's the
-next stub after `parse`).
+Then the real file: `Tokenizer::load` + `model.vocab` length = 151643, plus
+26 added tokens = 151669 known ids (that's the next stub after `parse`).
 
 ### ML concept you're actually learning here
 
