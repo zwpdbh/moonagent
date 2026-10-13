@@ -1,14 +1,14 @@
 ///|
 pub(all) suberror TokenizerError {
   InvalidFormat(String)
-  UnknownToken(Int)
+  UnknownToken(Int32)
   InvalidModel(String)
 }
 
 ///|
 #warnings("-unused_field")
 priv struct SpecialControlToken {
-  id : Int
+  id : Int32
   content : String
   single_word : Bool
   lstrip : Bool
@@ -19,7 +19,7 @@ priv struct SpecialControlToken {
 
 ///|
 priv struct QwenTokenizerModel {
-  vocab : Map[String, Int]
+  vocab : Map[String, Int32]
   model_type : String // JSON key "type" — renamed because `type` is a keyword
 }
 
@@ -30,7 +30,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
   guard json is Json::Object(obj) else {
     raise @json.JsonDecodeError((path, "QwenTokenizerModel: expected object"))
   }
-  let vocab : Map[String, Int] = field(obj, "vocab", path)
+  let vocab : Map[String, Int32] = field(obj, "vocab", path)
   let model_type : String = match obj.get("type") {
     Some(t) => @json.from_json(t, path=path.add_key("type"))
     None =>
@@ -121,9 +121,12 @@ priv struct QwenTokenizerDef {
 #warnings("-struct_never_constructed-unused_field")
 struct Tokenizer {
   // for encoding
-  vocab : Map[String, Int]
+  vocab : Map[String, Int32]
   // for decoding
-  ids : Map[Int, String]
+  ids : Map[Int32, String]
+  special_vocab : Map[String, Int32]
+  special_ids : Map[Int32, String]
+  regex_pattern : String
 }
 
 ///|
@@ -141,14 +144,18 @@ pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
   }
 
   let vocab = file.model.vocab
+  let special_vocab : Map[String, Int32] = Map([])
+  let special_ids : Map[Int32, String] = Map([])
 
   // merge those special tokens
-  for each in file.added_tokens {
-    vocab[each.content] = each.id
+  for each_special_token in file.added_tokens {
+    vocab[each_special_token.content] = each_special_token.id
+    special_ids.set(each_special_token.id, each_special_token.content)
+    special_vocab.set(each_special_token.content, each_special_token.id)
   }
 
   // build revers one
-  let ids : Map[Int, String] = Map([])
+  let ids : Map[Int32, String] = Map([])
   for token, id in vocab {
     if ids.contains(id) {
       raise InvalidFormat("duplicated id \{id} for token: \{token}")
@@ -156,7 +163,23 @@ pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
     ids[id] = token
   }
 
-  { vocab, ids, }
+  let regex_pattern = get_regex_pattern_from_pre_tokenizer(file.pre_tokenizer)
+
+  { vocab, ids, special_vocab, special_ids, regex_pattern, }
+}
+
+///|
+fn get_regex_pattern_from_pre_tokenizer(
+  pre_tokenizer : PreTokenizer,
+) -> String raise TokenizerError {
+  match pre_tokenizer {
+    Sequence([s, _]) => get_regex_pattern_from_pre_tokenizer(s)
+    Split(pattern~, ..) => pattern
+    ByteLevel(..) =>
+      raise InvalidFormat("expected Split pre-tokenizer, found ByteLevel")
+    Sequence(_) =>
+      raise InvalidFormat("expected Split as first pre-tokenizer in Sequence")
+  }
 }
 
 ///|
@@ -175,7 +198,7 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 /// Step 2: Byte-level mapping (bytes → alphabet chars)
 /// Step 3: The BPE merge loop (per chunk)
 /// Step 4: Token → id
-pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int] {
+pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
   ignore(self)
   ignore(text)
   abort("TODO: pre-tokenize + BPE merges")
@@ -208,7 +231,7 @@ fn to_byte_chars(chunk : String) -> String {
 /// adjacent pair exists in `merges`. Merges never cross chunks.
 fn bpe_merge(
   chars : Array[String],
-  merges : Map[(String, String), Int],
+  merges : Map[(String, String), Int32],
 ) -> Array[String] {
   ignore(merges)
   chars // TODO: greedy-by-rank merge loop (placeholder: never merges)
@@ -219,7 +242,9 @@ fn bpe_merge(
 /// pair -> rank (rank = position in the array, lower merges first).
 /// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
 #warnings("-unused_error_type")
-fn parse_merges(json : Json) -> Map[(String, String), Int] raise TokenizerError {
+fn parse_merges(
+  json : Json,
+) -> Map[(String, String), Int32] raise TokenizerError {
   ignore(json)
   Map([]) // TODO: pair array -> rank map (placeholder: always empty)
 }
@@ -229,7 +254,7 @@ fn parse_merges(json : Json) -> Map[(String, String), Int] raise TokenizerError 
 #warnings("-unused_error_type")
 pub fn Tokenizer::decode(
   self : Tokenizer,
-  ids : Array[Int],
+  ids : Array[Int32],
 ) -> String raise TokenizerError {
   ignore(self)
   ignore(ids)
@@ -239,7 +264,7 @@ pub fn Tokenizer::decode(
 ///|
 test "parse builds vocab map from model.vocab" {
   let snippet =
-    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": []}}
+    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
   let tok = Tokenizer::parse(snippet)
   assert_eq(tok.vocab.length(), 3)
   assert_eq(tok.vocab.get("b"), Some(1))
@@ -251,7 +276,7 @@ test "parse builds reverse index (id -> token) for decode" {
   // NOTE: requires adding a second field to `struct Tokenizer`
   // (spec README step 4), e.g. `ids : Array[String]`.
   let snippet =
-    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": []}}
+    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
   let tok = Tokenizer::parse(snippet)
   assert_eq(tok.ids.length(), 3)
   assert_eq(tok.ids[0], "a")
@@ -287,7 +312,7 @@ test "parse rejects json without model.vocab" {
 test "manual FromJson maps JSON key \"type\" to field model_type" {
   let j = @json.parse(
     (
-      #|{"model": {"vocab": {"a": 0}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": []}}
+      #|{"model": {"vocab": {"a": 0}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
     ),
   )
   let file : QwenTokenizerDef = @json.from_json(j)
@@ -303,7 +328,7 @@ test "parse folds added_tokens into both maps" {
     #|   {"id": 2, "content": "<|endoftext|>", "single_word": false,
     #|    "lstrip": false, "rstrip": false, "normalized": false, "special": true}
     #| ],
-    #| "pre_tokenizer": {"type": "Sequence", "pretokenizers": []}}
+    #| "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
   let tok = Tokenizer::parse(snippet)
   assert_eq(tok.vocab.get("<|endoftext|>"), Some(2))
   assert_eq(tok.ids[2], "<|endoftext|>")
@@ -378,7 +403,7 @@ test "to_byte_chars maps space to Ġ, keeps letters" {
 ///|
 test "bpe_merge replays merges by rank" {
   // ranks: (E,x)=0 merges before (p,l)=1 etc.
-  let merges : Map[(String, String), Int] = Map([])
+  let merges : Map[(String, String), Int32] = Map([])
   merges[("E", "x")] = 0
   merges[("Ex", "p")] = 5 // must NOT win over lower ranks
   merges[("p", "l")] = 1
@@ -392,7 +417,7 @@ test "bpe_merge replays merges by rank" {
 
 ///|
 test "bpe_merge merges a single known pair" {
-  let merges : Map[(String, String), Int] = Map([])
+  let merges : Map[(String, String), Int32] = Map([])
   merges[("a", "b")] = 0
   assert_eq(bpe_merge(["a", "b", "c"], merges), ["ab", "c"])
 }
