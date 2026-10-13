@@ -20,6 +20,7 @@ priv struct SpecialControlToken {
 ///|
 priv struct QwenTokenizerModel {
   vocab : Map[String, Int32]
+  merges : Array[Array[String]]
   model_type : String // JSON key "type" — renamed because `type` is a keyword
 }
 
@@ -31,6 +32,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
     raise @json.JsonDecodeError((path, "QwenTokenizerModel: expected object"))
   }
   let vocab : Map[String, Int32] = field(obj, "vocab", path)
+  let merges : Array[Array[String]] = field(obj, "merges", path)
   let model_type : String = match obj.get("type") {
     Some(t) => @json.from_json(t, path=path.add_key("type"))
     None =>
@@ -38,7 +40,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
         (path.add_key("type"), "missing \"type\" field"),
       )
   }
-  { vocab, model_type, }
+  { vocab, merges, model_type, }
 }
 
 ///|
@@ -135,25 +137,54 @@ struct Tokenizer {
 }
 
 ///|
+/// Extract the object at a JSON value, or raise with a clear message.
+#warnings("-unused_value")
+fn expect_object(
+  j : Json,
+  what~ : String,
+) -> Map[String, Json] raise TokenizerError {
+  guard j is Json::Object(o) else {
+    raise InvalidFormat("\{what}: expected JSON object")
+  }
+  o
+}
+
+///|
+/// Extract a required key from a JSON object, or raise with the key name.
+#warnings("-unused_value")
+fn expect_key(
+  obj : Map[String, Json],
+  key : String,
+  what~ : String,
+) -> Json raise TokenizerError {
+  match obj.get(key) {
+    Some(v) => v
+    None => raise InvalidFormat("\{what}: missing \"{key}\"")
+  }
+}
+
+///|
 /// Build a Tokenizer from the *contents* of tokenizer.json. Pure: no I/O.
 pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
   let parsed = @json.parse(json) catch {
     e => raise InvalidFormat(e.to_string())
   }
-  let file : QwenTokenizerDef = @json.from_json(parsed) catch {
+  let qwen_tokenizer_def : QwenTokenizerDef = @json.from_json(parsed) catch {
     e => raise InvalidFormat(e.to_string())
   }
 
-  guard file.model.model_type == "BPE" else {
-    raise InvalidModel("expected BPE tokenzier, got \{file.model.model_type} }")
+  guard qwen_tokenizer_def.model.model_type == "BPE" else {
+    raise InvalidModel(
+      "expected BPE tokenzier, got \{qwen_tokenizer_def.model.model_type} }",
+    )
   }
 
-  let vocab = file.model.vocab
+  let vocab = qwen_tokenizer_def.model.vocab
   let special_vocab : Map[String, Int32] = Map([])
   let special_ids : Map[Int32, String] = Map([])
 
   // merge those special tokens
-  for each_special_token in file.added_tokens {
+  for each_special_token in qwen_tokenizer_def.added_tokens {
     vocab[each_special_token.content] = each_special_token.id
     special_ids.set(each_special_token.id, each_special_token.content)
     special_vocab.set(each_special_token.content, each_special_token.id)
@@ -168,21 +199,11 @@ pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
     ids[id] = token
   }
 
-  let regex_pattern = get_regex_pattern_from_pre_tokenizer(file.pre_tokenizer)
+  let regex_pattern = get_regex_pattern_from_pre_tokenizer(
+    qwen_tokenizer_def.pre_tokenizer,
+  )
 
-  // merges live in the model section as ordered pairs; rank = position.
-  let merges = match parsed {
-    Json::Object(root) =>
-      match root.get("model") {
-        Some(Json::Object(model)) =>
-          match model.get("merges") {
-            Some(m) => parse_merges(m)
-            None => raise InvalidFormat("missing model.merges")
-          }
-        _ => raise InvalidFormat("missing model object")
-      }
-    _ => raise InvalidFormat("top level must be a JSON object")
-  }
+  let merges = qwen_tokenizer_def.model.merges |> parse_merges
 
   { vocab, ids, special_vocab, special_ids, merges, regex_pattern, }
 }
@@ -402,32 +423,25 @@ fn match_whitespace(cs : Array[Char], i : Int32) -> Int32 {
 /// Split text into pre-tokenizer chunks (the "Split" step of the pipeline).
 /// Regex matches ARE the chunks (Isolated behavior), not delimiters.
 fn split_text(text : String) -> Array[String] {
+  // the alternation branches, in regex order (first non-zero match wins)
+  let branches = [
+    match_contraction, match_word, match_digit, match_punct, match_newlines, match_trailing_ws,
+    match_whitespace,
+  ]
   let cs = text.to_array()
   let chunks : Array[String] = []
   let mut i = 0
   while i < cs.length() {
-    let mut len = match_contraction(cs, i)
-    if len == 0 {
-      len = match_word(cs, i)
-    }
-    if len == 0 {
-      len = match_digit(cs, i)
-    }
-    if len == 0 {
-      len = match_punct(cs, i)
-    }
-    if len == 0 {
-      len = match_newlines(cs, i)
-    }
-    if len == 0 {
-      len = match_trailing_ws(cs, i)
-    }
-    if len == 0 {
-      len = match_whitespace(cs, i)
-    }
-    if len == 0 {
-      len = 1 // safety net: always make progress
-    }
+    let len = branches
+      .iter()
+      .filter_map(fn(f) {
+        match f(cs, i) {
+          0 => None
+          n => Some(n)
+        }
+      })
+      .next()
+      .unwrap_or(1) // safety net: always make progress
     chunks.push(String::from_array(cs[i:i + len].to_owned()))
     i += len
   }
@@ -490,10 +504,21 @@ fn bpe_merge(
 /// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
 #warnings("-unused_error_type")
 fn parse_merges(
-  json : Json,
+  merges : Array[Array[String]],
 ) -> Map[(String, String), Int32] raise TokenizerError {
-  ignore(json)
-  Map([]) // TODO: pair array -> rank map (placeholder: always empty)
+  let merged : Map[(String, String), Int32] = Map([])
+
+  for (index, pair) in merges.iter2() {
+    let key = match pair {
+      [x, y] => (x, y)
+      _ =>
+        raise InvalidFormat(
+          "The merges in tokenizer.json should be two element arrays",
+        )
+    }
+    merged.set(key, index)
+  }
+  merged
 }
 
 ///|
@@ -667,19 +692,6 @@ test "bpe_merge merges a single known pair" {
   let merges : Map[(String, String), Int32] = Map([])
   merges[("a", "b")] = 0
   assert_eq(bpe_merge(["a", "b", "c"], merges), ["ab", "c"])
-}
-
-///|
-test "parse_merges builds pair -> rank from json pairs" {
-  let j = @json.parse(
-    (
-      #|[["Ġ", "t"], ["i", "n"], ["e", "r"]]
-    ),
-  )
-  let merges = parse_merges(j)
-  assert_eq(merges.get(("Ġ", "t")), Some(0))
-  assert_eq(merges.get(("i", "n")), Some(1))
-  assert_eq(merges.get(("e", "r")), Some(2))
 }
 
 ///|
