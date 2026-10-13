@@ -126,6 +126,11 @@ struct Tokenizer {
   ids : Map[Int32, String]
   special_vocab : Map[String, Int32]
   special_ids : Map[Int32, String]
+  // BPE merge table: pair -> rank (lower merges first)
+  merges : Map[(String, String), Int32]
+  // the pre-tokenizer regex pattern, kept for validation/reference.
+  // NOTE: core's @string.Regex cannot parse this PCRE pattern (\\p{L}, lookahead),
+  // so split_text hand-rolls its behavior instead of executing it.
   regex_pattern : String
 }
 
@@ -165,7 +170,21 @@ pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
 
   let regex_pattern = get_regex_pattern_from_pre_tokenizer(file.pre_tokenizer)
 
-  { vocab, ids, special_vocab, special_ids, regex_pattern, }
+  // merges live in the model section as ordered pairs; rank = position.
+  let merges = match parsed {
+    Json::Object(root) =>
+      match root.get("model") {
+        Some(Json::Object(model)) =>
+          match model.get("merges") {
+            Some(m) => parse_merges(m)
+            None => raise InvalidFormat("missing model.merges")
+          }
+        _ => raise InvalidFormat("missing model object")
+      }
+    _ => raise InvalidFormat("top level must be a JSON object")
+  }
+
+  { vocab, ids, special_vocab, special_ids, merges, regex_pattern, }
 }
 
 ///|
@@ -199,9 +218,27 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 /// Step 3: The BPE merge loop (per chunk)
 /// Step 4: Token → id
 pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
-  ignore(self)
-  ignore(text)
-  abort("TODO: pre-tokenize + BPE merges")
+  let ids : Array[Int32] = []
+  for chunk in split_text(text) {
+    // byte-level alphabet: " large" -> "Ġlarge"
+    let word = to_byte_chars(chunk)
+    // start BPE from single-char tokens
+    let chars : Array[String] = []
+    for c in word {
+      chars.push(c.to_string())
+    }
+    // replay the merge table, then look up ids
+    for token in bpe_merge(chars, self.merges) {
+      match self.vocab.get(token) {
+        Some(id) => ids.push(id)
+        None =>
+          // byte-level BPE covers every byte, so this means a bug or a
+          // foreign tokenizer file
+          abort("token not in vocab: \{token}")
+      }
+    }
+  }
+  ids
 }
 
 ///|
@@ -210,9 +247,191 @@ pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
 /// Implement by hand-rolling the alternation branches in order:
 /// contractions | optional-punct+letters | digit | space+punct-run |
 /// newlines | trailing-ws | whitespace.
+// --- split_text helpers: one matcher per alternation branch of the Qwen
+// pre-tokenizer pattern, tried in regex order (first match wins) ---
+
+///|
+/// Approximation of \p{L}: ASCII letters plus non-ASCII non-space non-digit
+/// chars (covers CJK ideographs; may misclassify rare symbols).
+fn is_letter(c : Char) -> Bool {
+  c.is_ascii_alphabetic() ||
+  (c.to_int() > 0x7F && !c.is_whitespace() && !c.is_numeric())
+}
+
+///|
+/// [^\s\p{L}\p{N}] — punctuation/symbol class.
+fn is_punct(c : Char) -> Bool {
+  !c.is_whitespace() && !is_letter(c) && !c.is_numeric()
+}
+
+///|
+/// Case-insensitive check that cs[i..] starts with `s`.
+fn matches_at(cs : Array[Char], i : Int32, s : String) -> Bool {
+  if i + s.length() > cs.length() {
+    return false
+  }
+  for k, c in s {
+    if cs[i + k].to_ascii_lowercase() != c {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Branch 1: (?i:'s|'t|'re|'ve|'m|'ll|'d)
+fn match_contraction(cs : Array[Char], i : Int32) -> Int32 {
+  for cand in ["'re", "'ve", "'ll", "'s", "'t", "'m", "'d"] {
+    if matches_at(cs, i, cand) {
+      return cand.length()
+    }
+  }
+  0
+}
+
+///|
+/// Branch 2: [^\r\n\p{L}\p{N}]?\p{L}+ — optional punct/space prefix + letters.
+fn match_word(cs : Array[Char], i : Int32) -> Int32 {
+  let mut j = i
+  if j < cs.length() &&
+    cs[j] != '\r' &&
+    cs[j] != '\n' &&
+    !is_letter(cs[j]) &&
+    !cs[j].is_numeric() &&
+    j + 1 < cs.length() &&
+    is_letter(cs[j + 1]) {
+    j += 1
+  }
+  let mut n = 0
+  while j + n < cs.length() && is_letter(cs[j + n]) {
+    n += 1
+  }
+  if n == 0 {
+    0
+  } else {
+    j - i + n
+  }
+}
+
+///|
+/// Branch 3: \p{N} — a single digit.
+fn match_digit(cs : Array[Char], i : Int32) -> Int32 {
+  if i < cs.length() && cs[i].is_numeric() {
+    1
+  } else {
+    0
+  }
+}
+
+///|
+/// Branch 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*` — optional space + punct run.
+fn match_punct(cs : Array[Char], i : Int32) -> Int32 {
+  let mut j = i
+  if j < cs.length() &&
+    cs[j] == ' ' &&
+    j + 1 < cs.length() &&
+    is_punct(cs[j + 1]) {
+    j += 1
+  }
+  let mut n = 0
+  while j + n < cs.length() && is_punct(cs[j + n]) {
+    n += 1
+  }
+  if n == 0 {
+    return 0
+  }
+  j += n
+  while j < cs.length() && (cs[j] == '\r' || cs[j] == '\n') {
+    j += 1
+  }
+  j - i
+}
+
+///|
+/// Branch 5: \s*[\r\n]+ — whitespace including at least one newline.
+fn match_newlines(cs : Array[Char], i : Int32) -> Int32 {
+  let mut j = i
+  while j < cs.length() &&
+        cs[j].is_whitespace() &&
+        cs[j] != '\r' &&
+        cs[j] != '\n' {
+    j += 1
+  }
+  let mut n = 0
+  while j + n < cs.length() && (cs[j + n] == '\r' || cs[j + n] == '\n') {
+    n += 1
+  }
+  if n == 0 {
+    0
+  } else {
+    j + n - i
+  }
+}
+
+///|
+/// Branch 6: \s+(?!\S) — whitespace run at end, or all-but-last char of a
+/// run (the last whitespace may attach to a following word via branch 2).
+fn match_trailing_ws(cs : Array[Char], i : Int32) -> Int32 {
+  let mut n = 0
+  while i + n < cs.length() && cs[i + n].is_whitespace() {
+    n += 1
+  }
+  if n == 0 {
+    return 0
+  }
+  if i + n == cs.length() {
+    return n
+  }
+  if n >= 2 {
+    return n - 1
+  }
+  0
+}
+
+///|
+/// Branch 7: \s+ — any other whitespace run.
+fn match_whitespace(cs : Array[Char], i : Int32) -> Int32 {
+  let mut n = 0
+  while i + n < cs.length() && cs[i + n].is_whitespace() {
+    n += 1
+  }
+  n
+}
+
+///|
+/// Split text into pre-tokenizer chunks (the "Split" step of the pipeline).
+/// Regex matches ARE the chunks (Isolated behavior), not delimiters.
 fn split_text(text : String) -> Array[String] {
-  ignore(text)
-  [] // TODO: hand-rolled pre-tokenizer splitter (placeholder: always wrong)
+  let cs = text.to_array()
+  let chunks : Array[String] = []
+  let mut i = 0
+  while i < cs.length() {
+    let mut len = match_contraction(cs, i)
+    if len == 0 {
+      len = match_word(cs, i)
+    }
+    if len == 0 {
+      len = match_digit(cs, i)
+    }
+    if len == 0 {
+      len = match_punct(cs, i)
+    }
+    if len == 0 {
+      len = match_newlines(cs, i)
+    }
+    if len == 0 {
+      len = match_trailing_ws(cs, i)
+    }
+    if len == 0 {
+      len = match_whitespace(cs, i)
+    }
+    if len == 0 {
+      len = 1 // safety net: always make progress
+    }
+    chunks.push(String::from_array(cs[i:i + len].to_owned()))
+    i += len
+  }
+  chunks
 }
 
 ///|
@@ -220,9 +439,37 @@ fn split_text(text : String) -> Array[String] {
 /// printable bytes map to themselves, others (space, control, >= 0x80)
 /// map to chars in the 0x100+ range (space 0x20 -> 'Ġ').
 /// (The reverse mapping is what `decode` will need.)
+
+///|
+/// GPT-2 byte alphabet: byte -> printable char code.
+/// Printable ranges (0x21-0x7E, 0xA1-0xAC, 0xAE-0xFF) map to themselves;
+/// the 68 remaining bytes map to 0x100+n in increasing order
+/// (space 0x20 -> 0x120 = 'Ġ').
+fn byte_to_char(b : Byte) -> Char {
+  let code = b.to_int()
+  let mapped = if (code >= 0x21 && code <= 0x7E) ||
+    (code >= 0xA1 && code <= 0xAC) ||
+    code >= 0xAE {
+    code
+  } else if code <= 0x20 {
+    256 + code
+  } else if code >= 0x7F && code <= 0xA0 {
+    256 + 33 + (code - 0x7F)
+  } else {
+    256 + 67 // 0xAD
+  }
+  mapped.unsafe_to_char()
+}
+
+///|
+/// Map a chunk's UTF-8 bytes to the byte-level alphabet chars.
+/// (The reverse mapping is what `decode` will need.)
 fn to_byte_chars(chunk : String) -> String {
-  ignore(chunk)
-  "" // TODO: byte -> alphabet char mapping (placeholder: always wrong)
+  let buf = StringBuilder()
+  for b in @encoding.encode(UTF8, chunk) {
+    buf.write_char(byte_to_char(b))
+  }
+  buf.to_string()
 }
 
 ///|
@@ -264,7 +511,7 @@ pub fn Tokenizer::decode(
 ///|
 test "parse builds vocab map from model.vocab" {
   let snippet =
-    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
+    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
   let tok = Tokenizer::parse(snippet)
   assert_eq(tok.vocab.length(), 3)
   assert_eq(tok.vocab.get("b"), Some(1))
@@ -276,7 +523,7 @@ test "parse builds reverse index (id -> token) for decode" {
   // NOTE: requires adding a second field to `struct Tokenizer`
   // (spec README step 4), e.g. `ids : Array[String]`.
   let snippet =
-    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
+    #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
   let tok = Tokenizer::parse(snippet)
   assert_eq(tok.ids.length(), 3)
   assert_eq(tok.ids[0], "a")
@@ -312,7 +559,7 @@ test "parse rejects json without model.vocab" {
 test "manual FromJson maps JSON key \"type\" to field model_type" {
   let j = @json.parse(
     (
-      #|{"model": {"vocab": {"a": 0}, "type": "BPE"}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
+      #|{"model": {"vocab": {"a": 0}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
     ),
   )
   let file : QwenTokenizerDef = @json.from_json(j)
@@ -323,7 +570,7 @@ test "manual FromJson maps JSON key \"type\" to field model_type" {
 ///|
 test "parse folds added_tokens into both maps" {
   let snippet =
-    #|{"model": {"vocab": {"a": 0, "b": 1}, "type": "BPE"},
+    #|{"model": {"vocab": {"a": 0, "b": 1}, "type": "BPE", "merges": []},
     #| "added_tokens": [
     #|   {"id": 2, "content": "<|endoftext|>", "single_word": false,
     #|    "lstrip": false, "rstrip": false, "normalized": false, "special": true}
@@ -433,4 +680,13 @@ test "parse_merges builds pair -> rank from json pairs" {
   assert_eq(merges.get(("Ġ", "t")), Some(0))
   assert_eq(merges.get(("i", "n")), Some(1))
   assert_eq(merges.get(("e", "r")), Some(2))
+}
+
+///|
+test "encode: known ids for the reference prompt (acceptance)" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  // verified against the Rust port and the book's notebook:
+  assert_eq(tok.encode("Explain large language models."), [
+    840, 20772, 3460, 4128, 4119, 13,
+  ])
 }
