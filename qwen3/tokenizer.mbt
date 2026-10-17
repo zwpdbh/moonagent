@@ -40,6 +40,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
         (path.add_key("type"), "missing \"type\" field"),
       )
   }
+
   { vocab, merges, model_type, }
 }
 
@@ -165,8 +166,10 @@ fn expect_key(
 
 ///|
 /// Build a Tokenizer from the *contents* of tokenizer.json. Pure: no I/O.
-pub fn Tokenizer::parse(json : String) -> Tokenizer raise TokenizerError {
-  let parsed = @json.parse(json) catch {
+pub fn Tokenizer::new(
+  tokenizer_json : String,
+) -> Tokenizer raise TokenizerError {
+  let parsed = @json.parse(tokenizer_json) catch {
     e => raise InvalidFormat(e.to_string())
   }
   let qwen_tokenizer_def : QwenTokenizerDef = @json.from_json(parsed) catch {
@@ -229,10 +232,20 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
     @fs.IOError(msg) =>
       raise InvalidFormat("cannot read file \{path}, error: \{msg}")
   }
-  Tokenizer::parse(content)
+  Tokenizer::new(content)
 }
 
 ///|
+/// Use byte pair encoding to convert text into an integer representation (token IDs) for LLM trainning
+/// Ref: https://sebastianraschka.com/blog/2025/bpe-from-scratch.html
+/// Q: Where is the vocabulary coming from? Do I need to build it manually first?
+/// A: The goal of BPE tokenization algorithm is to build a vocabulary of commonly occurring subwords
+/// So, yes, we need to build the vocabulary first, then use it to encode the text.
+/// Q: what is the Tokenizer we created from qwen's tokenizer.json file? how it is related with our algorithm
+/// A: ?
+/// Q: From the example: "the cat in the hat" in https://sebastianraschka.com/blog/2025/bpe-from-scratch.html#14-bpe-algorithm-example
+/// “th” appears twice, so first, we need to split the "the cat in the hat" to do that. 
+/// How the the split happended. It seems we need to use the 0-255 token value? where is it comes from? 
 /// Text -> token ids.
 /// Step 1: Use PreTokenizer's regex_pattern to split into chunks
 /// Step 2: Byte-level mapping (bytes → alphabet chars)
@@ -428,21 +441,21 @@ fn split_text(text : String) -> Array[String] {
     match_contraction, match_word, match_digit, match_punct, match_newlines, match_trailing_ws,
     match_whitespace,
   ]
-  let cs = text.to_array()
+  let chars = text.to_array()
   let chunks : Array[String] = []
   let mut i = 0
-  while i < cs.length() {
+  while i < chars.length() {
     let len = branches
       .iter()
       .filter_map(fn(f) {
-        match f(cs, i) {
+        match f(chars, i) {
           0 => None
           n => Some(n)
         }
       })
       .next()
       .unwrap_or(1) // safety net: always make progress
-    chunks.push(String::from_array(cs[i:i + len].to_owned()))
+    chunks.push(String::from_array(chars[i:i + len].to_owned()))
     i += len
   }
   chunks
@@ -537,7 +550,7 @@ pub fn Tokenizer::decode(
 test "parse builds vocab map from model.vocab" {
   let snippet =
     #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
-  let tok = Tokenizer::parse(snippet)
+  let tok = Tokenizer::new(snippet)
   assert_eq(tok.vocab.length(), 3)
   assert_eq(tok.vocab.get("b"), Some(1))
   assert_eq(tok.vocab.get("!"), Some(2))
@@ -549,7 +562,7 @@ test "parse builds reverse index (id -> token) for decode" {
   // (spec README step 4), e.g. `ids : Array[String]`.
   let snippet =
     #|{"model": {"vocab": {"a": 0, "b": 1, "!": 2}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
-  let tok = Tokenizer::parse(snippet)
+  let tok = Tokenizer::new(snippet)
   assert_eq(tok.ids.length(), 3)
   assert_eq(tok.ids[0], "a")
   assert_eq(tok.ids[1], "b")
@@ -559,7 +572,7 @@ test "parse builds reverse index (id -> token) for decode" {
 ///|
 test "parse rejects invalid JSON" {
   let raised = try {
-    Tokenizer::parse("not json") |> ignore
+    Tokenizer::new("not json") |> ignore
     false
   } catch {
     InvalidFormat(_) => true
@@ -571,7 +584,7 @@ test "parse rejects invalid JSON" {
 ///|
 test "parse rejects json without model.vocab" {
   let raised = try {
-    Tokenizer::parse("{}") |> ignore
+    Tokenizer::new("{}") |> ignore
     false
   } catch {
     InvalidFormat(_) => true
@@ -601,7 +614,7 @@ test "parse folds added_tokens into both maps" {
     #|    "lstrip": false, "rstrip": false, "normalized": false, "special": true}
     #| ],
     #| "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
-  let tok = Tokenizer::parse(snippet)
+  let tok = Tokenizer::new(snippet)
   assert_eq(tok.vocab.get("<|endoftext|>"), Some(2))
   assert_eq(tok.ids[2], "<|endoftext|>")
 }
