@@ -1,3 +1,5 @@
+warnings = "-unused_value-unused_type_declaration-unused_package"
+
 import {
   "moonbitlang/core/json",
   "moonbitlang/x/fs",

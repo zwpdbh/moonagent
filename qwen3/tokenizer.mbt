@@ -212,6 +212,29 @@ pub fn Tokenizer::new(
 }
 
 ///|
+/// Parse the "merges" array from tokenizer.json's model section into
+/// pair -> rank (rank = position in the array, lower merges first).
+/// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
+#warnings("-unused_error_type")
+fn parse_merges(
+  merges : Array[Array[String]],
+) -> Map[(String, String), Int32] raise TokenizerError {
+  let merged : Map[(String, String), Int32] = Map([])
+
+  for (index, pair) in merges.iter2() {
+    let key = match pair {
+      [x, y] => (x, y)
+      _ =>
+        raise InvalidFormat(
+          "The merges in tokenizer.json should be two element arrays",
+        )
+    }
+    merged.set(key, index)
+  }
+  merged
+}
+
+///|
 fn get_regex_pattern_from_pre_tokenizer(
   pre_tokenizer : PreTokenizer,
 ) -> String raise TokenizerError {
@@ -245,257 +268,15 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 /// A: ?
 /// Q: From the example: "the cat in the hat" in https://sebastianraschka.com/blog/2025/bpe-from-scratch.html#14-bpe-algorithm-example
 /// "the" appears twice, so we need to split the "the cat in the hat" as our first step. How this split happened? 
+/// Q: Do we use some help from the tokenizer.json or we do the split purely by our own?
+/// === Following are general steps:
 /// Text -> token ids.
 /// Step 1: Use PreTokenizer's regex_pattern to split into chunks
 /// Step 2: Byte-level mapping (bytes → alphabet chars)
 /// Step 3: The BPE merge loop (per chunk)
 /// Step 4: Token → id
 pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
-  let ids : Array[Int32] = []
-  for chunk in split_text(text) {
-    // byte-level alphabet: " large" -> "Ġlarge"
-    let word = to_byte_chars(chunk)
-    // start BPE from single-char tokens
-    let chars : Array[String] = []
-    for c in word {
-      chars.push(c.to_string())
-    }
-    // replay the merge table, then look up ids
-    for token in bpe_merge(chars, self.merges) {
-      match self.vocab.get(token) {
-        Some(id) => ids.push(id)
-        None =>
-          // byte-level BPE covers every byte, so this means a bug or a
-          // foreign tokenizer file
-          abort("token not in vocab: \{token}")
-      }
-    }
-  }
-  ids
-}
-
-///|
-/// Split text into pre-tokenizer chunks (the "Split" step of the pipeline).
-/// NOTE: regex matches ARE the chunks (Isolated behavior), not delimiters.
-/// Implement by hand-rolling the alternation branches in order:
-/// contractions | optional-punct+letters | digit | space+punct-run |
-/// newlines | trailing-ws | whitespace.
-// --- split_text helpers: one matcher per alternation branch of the Qwen
-// pre-tokenizer pattern, tried in regex order (first match wins) ---
-
-///|
-/// Approximation of \p{L}: ASCII letters plus non-ASCII non-space non-digit
-/// chars (covers CJK ideographs; may misclassify rare symbols).
-fn is_letter(c : Char) -> Bool {
-  c.is_ascii_alphabetic() ||
-  (c.to_int() > 0x7F && !c.is_whitespace() && !c.is_numeric())
-}
-
-///|
-/// [^\s\p{L}\p{N}] — punctuation/symbol class.
-fn is_punct(c : Char) -> Bool {
-  !c.is_whitespace() && !is_letter(c) && !c.is_numeric()
-}
-
-///|
-/// Case-insensitive check that cs[i..] starts with `s`.
-fn matches_at(cs : Array[Char], i : Int32, s : String) -> Bool {
-  if i + s.length() > cs.length() {
-    return false
-  }
-  for k, c in s {
-    if cs[i + k].to_ascii_lowercase() != c {
-      return false
-    }
-  }
-  true
-}
-
-///|
-/// Branch 1: (?i:'s|'t|'re|'ve|'m|'ll|'d)
-fn match_contraction(cs : Array[Char], i : Int32) -> Int32 {
-  for cand in ["'re", "'ve", "'ll", "'s", "'t", "'m", "'d"] {
-    if matches_at(cs, i, cand) {
-      return cand.length()
-    }
-  }
-  0
-}
-
-///|
-/// Branch 2: [^\r\n\p{L}\p{N}]?\p{L}+ — optional punct/space prefix + letters.
-fn match_word(cs : Array[Char], i : Int32) -> Int32 {
-  let mut j = i
-  if j < cs.length() &&
-    cs[j] != '\r' &&
-    cs[j] != '\n' &&
-    !is_letter(cs[j]) &&
-    !cs[j].is_numeric() &&
-    j + 1 < cs.length() &&
-    is_letter(cs[j + 1]) {
-    j += 1
-  }
-  let mut n = 0
-  while j + n < cs.length() && is_letter(cs[j + n]) {
-    n += 1
-  }
-  if n == 0 {
-    0
-  } else {
-    j - i + n
-  }
-}
-
-///|
-/// Branch 3: \p{N} — a single digit.
-fn match_digit(cs : Array[Char], i : Int32) -> Int32 {
-  if i < cs.length() && cs[i].is_numeric() {
-    1
-  } else {
-    0
-  }
-}
-
-///|
-/// Branch 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*` — optional space + punct run.
-fn match_punct(cs : Array[Char], i : Int32) -> Int32 {
-  let mut j = i
-  if j < cs.length() &&
-    cs[j] == ' ' &&
-    j + 1 < cs.length() &&
-    is_punct(cs[j + 1]) {
-    j += 1
-  }
-  let mut n = 0
-  while j + n < cs.length() && is_punct(cs[j + n]) {
-    n += 1
-  }
-  if n == 0 {
-    return 0
-  }
-  j += n
-  while j < cs.length() && (cs[j] == '\r' || cs[j] == '\n') {
-    j += 1
-  }
-  j - i
-}
-
-///|
-/// Branch 5: \s*[\r\n]+ — whitespace including at least one newline.
-fn match_newlines(cs : Array[Char], i : Int32) -> Int32 {
-  let mut j = i
-  while j < cs.length() &&
-        cs[j].is_whitespace() &&
-        cs[j] != '\r' &&
-        cs[j] != '\n' {
-    j += 1
-  }
-  let mut n = 0
-  while j + n < cs.length() && (cs[j + n] == '\r' || cs[j + n] == '\n') {
-    n += 1
-  }
-  if n == 0 {
-    0
-  } else {
-    j + n - i
-  }
-}
-
-///|
-/// Branch 6: \s+(?!\S) — whitespace run at end, or all-but-last char of a
-/// run (the last whitespace may attach to a following word via branch 2).
-fn match_trailing_ws(cs : Array[Char], i : Int32) -> Int32 {
-  let mut n = 0
-  while i + n < cs.length() && cs[i + n].is_whitespace() {
-    n += 1
-  }
-  if n == 0 {
-    return 0
-  }
-  if i + n == cs.length() {
-    return n
-  }
-  if n >= 2 {
-    return n - 1
-  }
-  0
-}
-
-///|
-/// Branch 7: \s+ — any other whitespace run.
-fn match_whitespace(cs : Array[Char], i : Int32) -> Int32 {
-  let mut n = 0
-  while i + n < cs.length() && cs[i + n].is_whitespace() {
-    n += 1
-  }
-  n
-}
-
-///|
-/// Split text into pre-tokenizer chunks (the "Split" step of the pipeline).
-/// Regex matches ARE the chunks (Isolated behavior), not delimiters.
-fn split_text(text : String) -> Array[String] {
-  // the alternation branches, in regex order (first non-zero match wins)
-  let branches = [
-    match_contraction, match_word, match_digit, match_punct, match_newlines, match_trailing_ws,
-    match_whitespace,
-  ]
-  let chars = text.to_array()
-  let chunks : Array[String] = []
-  let mut i = 0
-  while i < chars.length() {
-    let len = branches
-      .iter()
-      .filter_map(fn(f) {
-        match f(chars, i) {
-          0 => None
-          n => Some(n)
-        }
-      })
-      .next()
-      .unwrap_or(1) // safety net: always make progress
-    chunks.push(String::from_array(chars[i:i + len].to_owned()))
-    i += len
-  }
-  chunks
-}
-
-///|
-/// Map a chunk's UTF-8 bytes to the byte-level alphabet chars:
-/// printable bytes map to themselves, others (space, control, >= 0x80)
-/// map to chars in the 0x100+ range (space 0x20 -> 'Ġ').
-/// (The reverse mapping is what `decode` will need.)
-
-///|
-/// GPT-2 byte alphabet: byte -> printable char code.
-/// Printable ranges (0x21-0x7E, 0xA1-0xAC, 0xAE-0xFF) map to themselves;
-/// the 68 remaining bytes map to 0x100+n in increasing order
-/// (space 0x20 -> 0x120 = 'Ġ').
-fn byte_to_char(b : Byte) -> Char {
-  let code = b.to_int()
-  let mapped = if (code >= 0x21 && code <= 0x7E) ||
-    (code >= 0xA1 && code <= 0xAC) ||
-    code >= 0xAE {
-    code
-  } else if code <= 0x20 {
-    256 + code
-  } else if code >= 0x7F && code <= 0xA0 {
-    256 + 33 + (code - 0x7F)
-  } else {
-    256 + 67 // 0xAD
-  }
-  mapped.unsafe_to_char()
-}
-
-///|
-/// Map a chunk's UTF-8 bytes to the byte-level alphabet chars.
-/// (The reverse mapping is what `decode` will need.)
-fn to_byte_chars(chunk : String) -> String {
-  let buf = StringBuilder()
-  for b in @encoding.encode(UTF8, chunk) {
-    buf.write_char(byte_to_char(b))
-  }
-  buf.to_string()
+  abort("TODO")
 }
 
 ///|
@@ -508,29 +289,6 @@ fn bpe_merge(
 ) -> Array[String] {
   ignore(merges)
   chars // TODO: greedy-by-rank merge loop (placeholder: never merges)
-}
-
-///|
-/// Parse the "merges" array from tokenizer.json's model section into
-/// pair -> rank (rank = position in the array, lower merges first).
-/// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
-#warnings("-unused_error_type")
-fn parse_merges(
-  merges : Array[Array[String]],
-) -> Map[(String, String), Int32] raise TokenizerError {
-  let merged : Map[(String, String), Int32] = Map([])
-
-  for (index, pair) in merges.iter2() {
-    let key = match pair {
-      [x, y] => (x, y)
-      _ =>
-        raise InvalidFormat(
-          "The merges in tokenizer.json should be two element arrays",
-        )
-    }
-    merged.set(key, index)
-  }
-  merged
 }
 
 ///|
@@ -658,59 +416,4 @@ test "pre_tokenizer decodes Sequence of Split + ByteLevel" {
   assert_eq(add_prefix_space, false)
   assert_eq(use_regex, false)
   assert_eq(trim_offsets, false)
-}
-
-///|
-test "split_text chunks plain words and keeps leading space" {
-  assert_eq(split_text("Explain large language models."), [
-    "Explain", " large", " language", " models", ".",
-  ])
-}
-
-///|
-test "split_text splits off contractions" {
-  assert_eq(split_text("don't"), ["don", "'t"])
-  assert_eq(split_text("I'm"), ["I", "'m"])
-}
-
-///|
-test "split_text splits digits one by one" {
-  assert_eq(split_text("3.14"), ["3", ".", "1", "4"])
-}
-
-///|
-test "to_byte_chars maps space to Ġ, keeps letters" {
-  assert_eq(to_byte_chars(" large"), "Ġlarge")
-  assert_eq(to_byte_chars("Explain"), "Explain")
-}
-
-///|
-test "bpe_merge replays merges by rank" {
-  // ranks: (E,x)=0 merges before (p,l)=1 etc.
-  let merges : Map[(String, String), Int32] = Map([])
-  merges[("E", "x")] = 0
-  merges[("Ex", "p")] = 5 // must NOT win over lower ranks
-  merges[("p", "l")] = 1
-  merges[("pl", "a")] = 2
-  merges[("pla", "i")] = 3
-  merges[("plai", "n")] = 4
-  assert_eq(bpe_merge(["E", "x", "p", "l", "a", "i", "n"], merges), [
-    "Ex", "plain",
-  ])
-}
-
-///|
-test "bpe_merge merges a single known pair" {
-  let merges : Map[(String, String), Int32] = Map([])
-  merges[("a", "b")] = 0
-  assert_eq(bpe_merge(["a", "b", "c"], merges), ["ab", "c"])
-}
-
-///|
-test "encode: known ids for the reference prompt (acceptance)" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  // verified against the Rust port and the book's notebook:
-  assert_eq(tok.encode("Explain large language models."), [
-    840, 20772, 3460, 4128, 4119, 13,
-  ])
 }
