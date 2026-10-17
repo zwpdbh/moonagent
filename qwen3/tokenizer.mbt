@@ -6,15 +6,15 @@
 /// A vocabular
 /// An order list of merge rules: which two symbols can be combined and their priority.
 /// Q: Is tokenizer.json the result from trainning?
-/// A:
+/// A: It is. Our job is to load the tokenizer and implement encode and decode using its saved rules.
 /// tokenizer.json
-// ├── model.vocab        ← learned token-to-ID vocabulary
-// ├── model.merges       ← learned, ordered BPE merge rules
-// ├── normalizer         ← how to normalize input text
-// ├── pre_tokenizer      ← how to split text before applying BPE
-// ├── added_tokens       ← special/control tokens such as <|im_start|>
-// ├── post_processor     ← additional processing configuration
-// └── decoder            ← how to convert tokens back into text
+/// ├── model.vocab        ← learned token-to-ID vocabulary
+/// ├── model.merges       ← learned, ordered BPE merge rules
+/// ├── normalizer         ← how to normalize input text
+/// ├── pre_tokenizer      ← how to split text before applying BPE
+/// ├── added_tokens       ← special/control tokens such as <|im_start|>
+/// ├── post_processor     ← additional processing configuration
+/// └── decoder            ← how to convert tokens back into text
 
 ///|
 pub(all) suberror TokenizerError {
@@ -133,7 +133,7 @@ impl FromJson for PreTokenizer with fn from_json(json, path) {
 
 ///|
 #warnings("-unused_field")
-priv struct QwenTokenizerDef {
+priv struct QwenTokenizerFileDef {
   added_tokens : Array[SpecialControlToken]
   model : QwenTokenizerModel
   pre_tokenizer : PreTokenizer
@@ -191,7 +191,7 @@ pub fn Tokenizer::new(
   let parsed = @json.parse(tokenizer_json) catch {
     e => raise InvalidFormat(e.to_string())
   }
-  let qwen_tokenizer_def : QwenTokenizerDef = @json.from_json(parsed) catch {
+  let qwen_tokenizer_def : QwenTokenizerFileDef = @json.from_json(parsed) catch {
     e => raise InvalidFormat(e.to_string())
   }
 
@@ -373,7 +373,7 @@ test "manual FromJson maps JSON key \"type\" to field model_type" {
       #|{"model": {"vocab": {"a": 0}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
     ),
   )
-  let file : QwenTokenizerDef = @json.from_json(j)
+  let file : QwenTokenizerFileDef = @json.from_json(j)
   assert_eq(file.model.model_type, "BPE")
   assert_eq(file.model.vocab.get("a"), Some(0))
 }
