@@ -244,8 +244,7 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 /// Q: what is the Tokenizer we created from qwen's tokenizer.json file? how it is related with our algorithm
 /// A: ?
 /// Q: From the example: "the cat in the hat" in https://sebastianraschka.com/blog/2025/bpe-from-scratch.html#14-bpe-algorithm-example
-/// “th” appears twice, so first, we need to split the "the cat in the hat" to do that. 
-/// How the the split happended. It seems we need to use the 0-255 token value? where is it comes from? 
+/// "the" appears twice, so we need to split the "the cat in the hat" as our first step. How this split happened? 
 /// Text -> token ids.
 /// Step 1: Use PreTokenizer's regex_pattern to split into chunks
 /// Step 2: Byte-level mapping (bytes → alphabet chars)
