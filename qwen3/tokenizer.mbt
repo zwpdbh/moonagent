@@ -1,3 +1,21 @@
+/// The BPE algorithm from https://sebastianraschka.com/blog/2025/bpe-from-scratch.htm
+/// And the tokenizer.json file downloaded with Qwen3 model.
+/// Q: what is "train a BPE tokenizer"
+/// A: It means running the BPE learning algorithm over a large text to discover useful
+/// subwords and save them as:
+/// A vocabular
+/// An order list of merge rules: which two symbols can be combined and their priority.
+/// Q: Is tokenizer.json the result from trainning?
+/// A:
+/// tokenizer.json
+// ├── model.vocab        ← learned token-to-ID vocabulary
+// ├── model.merges       ← learned, ordered BPE merge rules
+// ├── normalizer         ← how to normalize input text
+// ├── pre_tokenizer      ← how to split text before applying BPE
+// ├── added_tokens       ← special/control tokens such as <|im_start|>
+// ├── post_processor     ← additional processing configuration
+// └── decoder            ← how to convert tokens back into text
+
 ///|
 pub(all) suberror TokenizerError {
   InvalidFormat(String)
@@ -45,6 +63,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
 }
 
 ///|
+/// Rules for splitting text before BPE.
 /// Mirror of the "pre_tokenizer" section — an externally-tagged enum:
 /// the JSON "type" field picks the variant.
 priv enum PreTokenizer {
@@ -123,13 +142,13 @@ priv struct QwenTokenizerDef {
 ///|
 #warnings("-struct_never_constructed-unused_field")
 struct Tokenizer {
-  // for encoding
+  // 151,643 entries mapping token strings to token IDs.
   vocab : Map[String, Int32]
   // for decoding
   ids : Map[Int32, String]
   special_vocab : Map[String, Int32]
   special_ids : Map[Int32, String]
-  // BPE merge table: pair -> rank (lower merges first)
+  // 151,387 ordered BPE rules.
   merges : Map[(String, String), Int32]
   // the pre-tokenizer regex pattern, kept for validation/reference.
   // NOTE: core's @string.Regex cannot parse this PCRE pattern (\\p{L}, lookahead),
@@ -261,11 +280,8 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 ///|
 /// Use byte pair encoding to convert text into an integer representation (token IDs) for LLM trainning
 /// Ref: https://sebastianraschka.com/blog/2025/bpe-from-scratch.html
-/// Q: Where is the vocabulary coming from? Do I need to build it manually first?
-/// A: The goal of BPE tokenization algorithm is to build a vocabulary of commonly occurring subwords
-/// So, yes, we need to build the vocabulary first, then use it to encode the text.
+/// Q: Where is the vocabulary coming from? Do I need to build it manually first? Or it is already 
 /// Q: what is the Tokenizer we created from qwen's tokenizer.json file? how it is related with our algorithm
-/// A: ?
 /// Q: From the example: "the cat in the hat" in https://sebastianraschka.com/blog/2025/bpe-from-scratch.html#14-bpe-algorithm-example
 /// "the" appears twice, so we need to split the "the cat in the hat" as our first step. How this split happened? 
 /// Q: Do we use some help from the tokenizer.json or we do the split purely by our own?
