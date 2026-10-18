@@ -4,5 +4,7 @@ import {
   "moonbitlang/core/json",
   "moonbitlang/x/fs",
   "moonbitlang/x/encoding",
+  "moonbitlang/regexp",
+  "moonbitlang/core/string",
   "zw/utils",
 }

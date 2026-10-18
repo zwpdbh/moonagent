@@ -9,7 +9,7 @@
 /// Errors raised by the download helpers in this file.
 pub(all) suberror DownloadError {
   /// Server answered with a non-success HTTP status (status, url).
-  BadStatus(Int, String)
+  BadStatus(Int32, String)
   /// Redirect chain exceeded the hop limit.
   TooManyRedirects(String)
   /// Primary (and backup, when given) URL both failed.
