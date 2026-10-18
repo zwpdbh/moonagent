@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "username/qwen3"
+
+// Values
+
+// Errors
+pub(all) suberror TokenizerError {
+  InvalidFormat(String)
+  UnknownToken(Int)
+  InvalidModel(String)
+}
+
+// Types and methods
+type Tokenizer
+pub fn Tokenizer::decode(Self, Array[Int]) -> String raise TokenizerError
+pub fn Tokenizer::encode(Self, String) -> Array[Int]
+pub fn Tokenizer::load(String) -> Self raise TokenizerError
+pub fn Tokenizer::new(String) -> Self raise TokenizerError
+
+// Type aliases
+
+// Traits

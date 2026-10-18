@@ -1,8 +1,18 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "zw/utils"
 
+import {
+  "moonbitlang/core/json",
+}
+
 // Values
 pub async fn download_file(String, String, backup_url? : String) -> String
+
+pub fn expect_key(Map[String, Json], String, what~ : String) -> Json raise UtilJsonError
+
+pub fn expect_object(Json, what~ : String) -> Map[String, Json] raise UtilJsonError
+
+pub fn[T : @json.FromJson] extract(Map[String, Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
 
 pub fn qwen3_model_dir() -> String
 
@@ -12,6 +22,10 @@ pub(all) suberror DownloadError {
   TooManyRedirects(String)
   DownloadFailed(String)
   BadRedirect(String)
+}
+
+pub(all) suberror UtilJsonError {
+  InvalidFormat(String)
 }
 
 // Types and methods

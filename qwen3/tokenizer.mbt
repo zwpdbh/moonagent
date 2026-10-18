@@ -24,7 +24,6 @@ pub(all) suberror TokenizerError {
 }
 
 ///|
-#warnings("-unused_field")
 priv struct SpecialControlToken {
   id : Int32
   content : String
@@ -49,8 +48,8 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
   guard json is Json::Object(obj) else {
     raise @json.JsonDecodeError((path, "QwenTokenizerModel: expected object"))
   }
-  let vocab : Map[String, Int32] = field(obj, "vocab", path)
-  let merges : Array[Array[String]] = field(obj, "merges", path)
+  let vocab : Map[String, Int32] = @utils.extract(obj, "vocab", path)
+  let merges : Array[Array[String]] = @utils.extract(obj, "merges", path)
   let model_type : String = match obj.get("type") {
     Some(t) => @json.from_json(t, path=path.add_key("type"))
     None =>
@@ -75,23 +74,6 @@ priv enum PreTokenizer {
 }
 
 ///|
-/// Helper: extract required field `key` and decode it as `T`,
-/// keeping the JSON path for error messages.
-fn[T : FromJson] field(
-  obj : Map[String, Json],
-  key : String,
-  path : @json.JsonPath,
-) -> T raise @json.JsonDecodeError {
-  match obj.get(key) {
-    Some(v) => @json.from_json(v, path=path.add_key(key))
-    None =>
-      raise @json.JsonDecodeError(
-        (path.add_key(key), "missing \"\{key}\" field"),
-      )
-  }
-}
-
-///|
 /// Notice path grows as you descend during recurisve parse
 impl FromJson for PreTokenizer with fn from_json(json, path) {
   guard json is Json::Object(obj) else {
@@ -103,10 +85,12 @@ impl FromJson for PreTokenizer with fn from_json(json, path) {
     )
   }
   match kind {
-    "Sequence" => Sequence(field(obj, "pretokenizers", path))
+    "Sequence" => Sequence(@utils.extract(obj, "pretokenizers", path))
     "Split" => {
       // pattern is nested: {"Regex": "..."}
-      let pattern_map : Map[String, String] = field(obj, "pattern", path)
+      let pattern_map : Map[String, String] = @utils.extract(
+        obj, "pattern", path,
+      )
       guard pattern_map.get("Regex") is Some(regex) else {
         raise @json.JsonDecodeError(
           (path.add_key("pattern"), "Split: expected {\"Regex\": ...}"),
@@ -114,15 +98,15 @@ impl FromJson for PreTokenizer with fn from_json(json, path) {
       }
       Split(
         pattern=regex,
-        behavior=field(obj, "behavior", path),
-        invert=field(obj, "invert", path),
+        behavior=@utils.extract(obj, "behavior", path),
+        invert=@utils.extract(obj, "invert", path),
       )
     }
     "ByteLevel" =>
       ByteLevel(
-        add_prefix_space=field(obj, "add_prefix_space", path),
-        trim_offsets=field(obj, "trim_offsets", path),
-        use_regex=field(obj, "use_regex", path),
+        add_prefix_space=@utils.extract(obj, "add_prefix_space", path),
+        trim_offsets=@utils.extract(obj, "trim_offsets", path),
+        use_regex=@utils.extract(obj, "use_regex", path),
       )
     _ =>
       raise @json.JsonDecodeError(
@@ -132,55 +116,35 @@ impl FromJson for PreTokenizer with fn from_json(json, path) {
 }
 
 ///|
-#warnings("-unused_field")
-priv struct QwenTokenizerFileDef {
+priv struct QwenTokenizerJsonFile {
   added_tokens : Array[SpecialControlToken]
   model : QwenTokenizerModel
   pre_tokenizer : PreTokenizer
 } derive(FromJson)
 
 ///|
-#warnings("-struct_never_constructed-unused_field")
 struct Tokenizer {
-  // 151,643 entries mapping token strings to token IDs.
+  // Ordinary BPE tokens
   vocab : Map[String, Int32]
-  // for decoding
+  // reverse lookup of vocab
   ids : Map[Int32, String]
-  special_vocab : Map[String, Int32]
-  special_ids : Map[Int32, String]
-  // 151,387 ordered BPE rules.
+  // Added tokens only: ID -> literal content.
+  added_ids : Map[Int32, String]
+  // reverse lookup for added_ids
+  added_vocabs : Map[String, Int32]
+  // 151,387 ordered BPE rules. (left symbol, right symbol) -> merge rank.
   merges : Map[(String, String), Int32]
-  // the pre-tokenizer regex pattern, kept for validation/reference.
-  // NOTE: core's @string.Regex cannot parse this PCRE pattern (\\p{L}, lookahead),
-  // so split_text hand-rolls its behavior instead of executing it.
-  regex_pattern : String
 }
 
 ///|
-/// Extract the object at a JSON value, or raise with a clear message.
-#warnings("-unused_value")
-fn expect_object(
-  j : Json,
-  what~ : String,
-) -> Map[String, Json] raise TokenizerError {
-  guard j is Json::Object(o) else {
-    raise InvalidFormat("\{what}: expected JSON object")
-  }
-  o
+fn Tokenizer::parse_text(self : Self, text : String) -> Array[TextString] {
+  abort("TODO")
 }
 
 ///|
-/// Extract a required key from a JSON object, or raise with the key name.
-#warnings("-unused_value")
-fn expect_key(
-  obj : Map[String, Json],
-  key : String,
-  what~ : String,
-) -> Json raise TokenizerError {
-  match obj.get(key) {
-    Some(v) => v
-    None => raise InvalidFormat("\{what}: missing \"{key}\"")
-  }
+priv enum TextString {
+  Ordinay(String)
+  Added(String)
 }
 
 ///|
@@ -191,7 +155,7 @@ pub fn Tokenizer::new(
   let parsed = @json.parse(tokenizer_json) catch {
     e => raise InvalidFormat(e.to_string())
   }
-  let qwen_tokenizer_def : QwenTokenizerFileDef = @json.from_json(parsed) catch {
+  let qwen_tokenizer_def : QwenTokenizerJsonFile = @json.from_json(parsed) catch {
     e => raise InvalidFormat(e.to_string())
   }
 
@@ -202,14 +166,13 @@ pub fn Tokenizer::new(
   }
 
   let vocab = qwen_tokenizer_def.model.vocab
-  let special_vocab : Map[String, Int32] = Map([])
-  let special_ids : Map[Int32, String] = Map([])
-
+  let added_ids : Map[Int32, String] = Map([])
+  let added_vocabs : Map[String, Int32] = Map([])
   // merge those special tokens
   for each_special_token in qwen_tokenizer_def.added_tokens {
-    vocab[each_special_token.content] = each_special_token.id
-    special_ids.set(each_special_token.id, each_special_token.content)
-    special_vocab.set(each_special_token.content, each_special_token.id)
+    vocab.set(each_special_token.content, each_special_token.id)
+    added_vocabs.set(each_special_token.content, each_special_token.id)
+    added_ids.set(each_special_token.id, each_special_token.content)
   }
 
   // build revers one
@@ -221,20 +184,15 @@ pub fn Tokenizer::new(
     ids[id] = token
   }
 
-  let regex_pattern = get_regex_pattern_from_pre_tokenizer(
-    qwen_tokenizer_def.pre_tokenizer,
-  )
-
   let merges = qwen_tokenizer_def.model.merges |> parse_merges
 
-  { vocab, ids, special_vocab, special_ids, merges, regex_pattern, }
+  { vocab, ids, added_ids, added_vocabs, merges, }
 }
 
 ///|
 /// Parse the "merges" array from tokenizer.json's model section into
 /// pair -> rank (rank = position in the array, lower merges first).
 /// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
-#warnings("-unused_error_type")
 fn parse_merges(
   merges : Array[Array[String]],
 ) -> Map[(String, String), Int32] raise TokenizerError {
@@ -254,20 +212,6 @@ fn parse_merges(
 }
 
 ///|
-fn get_regex_pattern_from_pre_tokenizer(
-  pre_tokenizer : PreTokenizer,
-) -> String raise TokenizerError {
-  match pre_tokenizer {
-    Sequence([s, _]) => get_regex_pattern_from_pre_tokenizer(s)
-    Split(pattern~, ..) => pattern
-    ByteLevel(..) =>
-      raise InvalidFormat("expected Split pre-tokenizer, found ByteLevel")
-    Sequence(_) =>
-      raise InvalidFormat("expected Split as first pre-tokenizer in Sequence")
-  }
-}
-
-///|
 /// Load tokenizer.json from disk, then parse.
 pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
   let content = @fs.read_file_to_string(path) catch {
@@ -280,17 +224,14 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 ///|
 /// Use byte pair encoding to convert text into an integer representation (token IDs) for LLM trainning
 /// Ref: https://sebastianraschka.com/blog/2025/bpe-from-scratch.html
-/// Q: Where is the vocabulary coming from? Do I need to build it manually first? Or it is already 
-/// Q: what is the Tokenizer we created from qwen's tokenizer.json file? how it is related with our algorithm
+/// Q: Where is the vocabulary coming from? Do I need to build it manually first?
+/// A: We don't need to build the vocabulary, it is created/trained from Qwen model, the tokenizer.json file contains the vocabs.
+/// Q: what is the Tokenizer we created from qwen's tokenizer.json file? how it is related with our code.
+/// The tokenizer contains result of  the BPE algorithm worked on the text. Our code don't need to implement BPE, we just use the rules and vocabs to do encode and decode.
 /// Q: From the example: "the cat in the hat" in https://sebastianraschka.com/blog/2025/bpe-from-scratch.html#14-bpe-algorithm-example
 /// "the" appears twice, so we need to split the "the cat in the hat" as our first step. How this split happened? 
 /// Q: Do we use some help from the tokenizer.json or we do the split purely by our own?
 /// === Following are general steps:
-/// Text -> token ids.
-/// Step 1: Use PreTokenizer's regex_pattern to split into chunks
-/// Step 2: Byte-level mapping (bytes → alphabet chars)
-/// Step 3: The BPE merge loop (per chunk)
-/// Step 4: Token → id
 pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
   abort("TODO")
 }
@@ -309,7 +250,6 @@ fn bpe_merge(
 
 ///|
 /// Token ids -> text. Raises UnknownToken for ids outside the vocab.
-#warnings("-unused_error_type")
 pub fn Tokenizer::decode(
   self : Tokenizer,
   ids : Array[Int32],
@@ -373,7 +313,7 @@ test "manual FromJson maps JSON key \"type\" to field model_type" {
       #|{"model": {"vocab": {"a": 0}, "type": "BPE", "merges": []}, "added_tokens": [], "pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false, "use_regex": false}]}}
     ),
   )
-  let file : QwenTokenizerFileDef = @json.from_json(j)
+  let file : QwenTokenizerJsonFile = @json.from_json(j)
   assert_eq(file.model.model_type, "BPE")
   assert_eq(file.model.vocab.get("a"), Some(0))
 }
