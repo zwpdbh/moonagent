@@ -139,7 +139,7 @@ struct Tokenizer {
 }
 
 ///|
-priv enum TextString {
+priv enum TokenString {
   Ordinay(String)
   Added(String)
 }
@@ -156,7 +156,7 @@ fn Tokenizer::split_string(self : Self, input : String) -> Array[String] {
 }
 
 ///|
-fn Tokenizer::parse_text(self : Self, text : String) -> Array[TextString] {
+fn Tokenizer::parse_text(self : Self, text : String) -> Array[TokenString] {
   let tokens = self.added_vocabs.keys().to_array()
   tokens.sort_by_key(token => -token.length())
   let regex : @string.Regex? = tokens.fold(init=None, (acc, token) => {
@@ -166,7 +166,7 @@ fn Tokenizer::parse_text(self : Self, text : String) -> Array[TextString] {
       Some(current) => Some(current | literal)
     }
   })
-  let result : Array[TextString] = []
+  let result : Array[TokenString] = []
   guard regex is Some(regex) else {
     if text.length() > 0 {
       result.push(Ordinay(text))
@@ -287,7 +287,61 @@ pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
 /// "the" appears twice, so we need to split the "the cat in the hat" as our first step. How this split happened? 
 /// Q: Do we use some help from the tokenizer.json or we do the split purely by our own?
 /// === Following are general steps:
-pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
+pub fn Tokenizer::encode(
+  self : Tokenizer,
+  text : String,
+) -> Array[Int32] raise TokenizerError {
+  let token_strings = self.parse_text(text)
+
+  let token_ids : Array[Int32] = []
+
+  for segment in token_strings {
+    match segment {
+      Ordinay(s) =>
+        for chunk in self.split_string(s) {
+          let chunk_ids = self.encode_chunk(chunk)
+          for id in chunk_ids {
+            token_ids.push(id)
+          }
+        }
+      Added(control_string) => {
+        guard self.added_vocabs.get(control_string) is Some(id) else {
+          raise InvalidFormat("failed to get control string's id")
+        }
+        token_ids.push(id)
+      }
+    }
+  }
+  token_ids
+}
+
+///|
+fn Tokenizer::encode_chunk(
+  self : Tokenizer,
+  chunk : String,
+) -> Array[Int32] raise TokenizerError {
+  let bytes = @encoding.encode(@encoding.UTF8, chunk)
+  let symbols = bytes_to_symbols(bytes)
+  let merged_symbols = bpe_merge(symbols, self.merges)
+  self.symbols_to_ids(merged_symbols)
+}
+
+///|
+/// Convert each UTF-8 byte into its corresponding printable
+/// byte-alphabet symbol.
+fn bytes_to_symbols(bytes : Bytes) -> Array[String] {
+  ignore(bytes)
+  abort("TODO")
+}
+
+///|
+/// Convert final BPE symbols into IDs using self.vocab.
+fn Tokenizer::symbols_to_ids(
+  self : Tokenizer,
+  symbols : Array[String],
+) -> Array[Int32] raise TokenizerError {
+  ignore(self)
+  ignore(symbols)
   abort("TODO")
 }
 
