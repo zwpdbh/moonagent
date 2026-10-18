@@ -13,7 +13,7 @@ pub(all) suberror TokenizerError {
 // Types and methods
 type Tokenizer
 pub fn Tokenizer::decode(Self, Array[Int]) -> String raise TokenizerError
-pub fn Tokenizer::encode(Self, String) -> Array[Int]
+pub fn Tokenizer::encode(Self, String) -> Array[Int] raise TokenizerError
 pub fn Tokenizer::load(String) -> Self raise TokenizerError
 pub fn Tokenizer::new(String) -> Self raise TokenizerError
 

@@ -6,6 +6,8 @@ import {
 }
 
 // Values
+pub fn bytes_to_symbols(Bytes) -> Array[String]
+
 pub async fn download_file(String, String, backup_url? : String) -> String
 
 pub fn expect_key(Map[String, Json], String, what~ : String) -> Json raise UtilJsonError

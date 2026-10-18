@@ -28,3 +28,21 @@ test "split_with_pre_tokenizer uses the Qwen manual fallback" {
     " ", " hello",
   ])
 }
+
+///|
+test "bytes_to_symbols maps direct and remapped byte ranges" {
+  assert_eq(bytes_to_symbols(Bytes::from_array([65, 32, 33])), ["A", "Ġ", "!"])
+  assert_eq(
+    bytes_to_symbols(Bytes::from_array([33, 126, 161, 172, 174, 255])),
+    ["!", "~", "¡", "¬", "®", "ÿ"],
+  )
+  assert_eq(bytes_to_symbols(Bytes::from_array([0, 9, 10, 127, 160, 173])), [
+    "Ā", "ĉ", "Ċ", "ġ", "ł", "Ń",
+  ])
+}
+
+///|
+test "bytes_to_symbols handles UTF-8 bytes and empty input" {
+  assert_eq(bytes_to_symbols(Bytes::from_array([195, 169])), ["Ã", "©"])
+  assert_eq(bytes_to_symbols(Bytes::from_array([])), [])
+}

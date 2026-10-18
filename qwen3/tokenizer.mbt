@@ -316,22 +316,15 @@ pub fn Tokenizer::encode(
 }
 
 ///|
+/// chunk is a piece of human-readable text produced from pre-tokenization
 fn Tokenizer::encode_chunk(
-  self : Tokenizer,
+  self : Self,
   chunk : String,
 ) -> Array[Int32] raise TokenizerError {
   let bytes = @encoding.encode(@encoding.UTF8, chunk)
-  let symbols = bytes_to_symbols(bytes)
+  let symbols = @utils.bytes_to_symbols(bytes)
   let merged_symbols = bpe_merge(symbols, self.merges)
   self.symbols_to_ids(merged_symbols)
-}
-
-///|
-/// Convert each UTF-8 byte into its corresponding printable
-/// byte-alphabet symbol.
-fn bytes_to_symbols(bytes : Bytes) -> Array[String] {
-  ignore(bytes)
-  abort("TODO")
 }
 
 ///|
