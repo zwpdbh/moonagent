@@ -16,6 +16,8 @@ pub fn[T : @json.FromJson] extract(Map[String, Json], String, @json.JsonPath) ->
 
 pub fn qwen3_model_dir() -> String
 
+pub fn split_with_pre_tokenizer(String, String) -> Array[String]
+
 // Errors
 pub(all) suberror DownloadError {
   BadStatus(Int, String)

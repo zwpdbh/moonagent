@@ -29,5 +29,4 @@ import {
   "moonbitlang/async@0.22.4",
   "moonbitlang/x@0.5.5",
   "zw/utils@0.1.0",
-  "moonbitlang/regexp@0.3.6",
 }

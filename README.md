@@ -44,12 +44,11 @@ explain both sides as we go.
    - reinforcement learning
    - distillation
 
-
-## References 
+## References
 
 - Download model: `~/.cache/models/Qwen/Qwen3-0.6B`
 
-```sh 
+```sh
 zw@wei:~/code/moonbit_programming/moonagent$ ll ~/.cache/models/Qwen/Qwen3-0.6B
 total 1483604
 drwxr-xr-x 2 zw zw       4096 Oct  8 21:18 ./
@@ -65,6 +64,6 @@ drwxr-xr-x 3 zw zw       4096 Oct  8 21:14 ../
 
 - `/home/zw/code/python_programming/reasoning-from-scratch`
   Python code for book: Build a Reasoning Model (From Scratch)
+- Related blog articles
 
-- Related blog articles 
   - [mplementing A Byte Pair Encoding (BPE) Tokenizer From Scratch](https://sebastianraschka.com/blog/2025/bpe-from-scratch.html)

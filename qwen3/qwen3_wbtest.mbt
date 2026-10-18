@@ -10,6 +10,7 @@ test "parse_text returns ordinary input when no added tokens are configured" {
     added_ids: Map([]),
     added_vocabs: Map([]),
     merges: Map([]),
+    pre_tokenizer: Sequence([]),
   }
   let parts = tok.parse_text("plain 世界")
   assert_eq(parts.length(), 1)
@@ -39,6 +40,7 @@ test "parse_text prefers the longest added token at the same position" {
     added_ids: Map([]),
     added_vocabs,
     merges: Map([]),
+    pre_tokenizer: Sequence([]),
   }
   let parts = tok.parse_text("<|a|>x<|a|>")
   assert_eq(parts.length(), 2)
@@ -159,4 +161,40 @@ test "pre_tokenizer decodes Sequence of Split + ByteLevel" {
   assert_eq(add_prefix_space, false)
   assert_eq(use_regex, false)
   assert_eq(trim_offsets, false)
+}
+
+///|
+test "split_string splits words contractions numbers and punctuation" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.split_string(""), [])
+  assert_eq(tok.split_string("Explain large language models."), [
+    "Explain", " large", " language", " models", ".",
+  ])
+  assert_eq(tok.split_string("I'll"), ["I", "'ll"])
+  assert_eq(tok.split_string("I'M"), ["I", "'M"])
+  assert_eq(tok.split_string("we're"), ["we", "'re"])
+  assert_eq(tok.split_string("they've"), ["they", "'ve"])
+  assert_eq(tok.split_string("he'd"), ["he", "'d"])
+  assert_eq(tok.split_string("I'll I'M we're they've he'd"), [
+    "I", "'ll", " I", "'M", " we", "'re", " they", "'ve", " he", "'d",
+  ])
+  assert_eq(tok.split_string("123 !?..."), ["1", "2", "3", " !?..."])
+}
+
+///|
+test "split_string preserves Qwen whitespace and newline boundaries" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.split_string("  hello"), [" ", " hello"])
+  assert_eq(tok.split_string("   !"), ["  ", " !"])
+  assert_eq(tok.split_string("hello  "), ["hello", "  "])
+  assert_eq(tok.split_string("Hello...\n\nWorld"), ["Hello", "...\n\n", "World"])
+  assert_eq(tok.split_string("a \n  b"), ["a", " \n", " ", " b"])
+  assert_eq(tok.split_string(" \tfoo"), [" ", "\tfoo"])
+}
+
+///|
+test "split_string handles Unicode letters numbers and symbols" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.split_string("café 中文😀"), ["café", " 中文", "😀"])
+  assert_eq(tok.split_string("٤٥"), ["٤", "٥"])
 }

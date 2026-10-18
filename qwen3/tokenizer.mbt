@@ -116,6 +116,7 @@ impl FromJson for PreTokenizer with fn from_json(json, path) {
 }
 
 ///|
+/// saved at `~/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json`
 priv struct QwenTokenizerJsonFile {
   added_tokens : Array[SpecialControlToken]
   model : QwenTokenizerModel
@@ -134,12 +135,24 @@ struct Tokenizer {
   added_vocabs : Map[String, Int32]
   // 151,387 ordered BPE rules. (left symbol, right symbol) -> merge rank.
   merges : Map[(String, String), Int32]
+  pre_tokenizer : PreTokenizer
 }
 
 ///|
 priv enum TextString {
   Ordinay(String)
   Added(String)
+}
+
+///|
+fn Tokenizer::split_string(self : Self, input : String) -> Array[String] {
+  guard self.pre_tokenizer is Sequence([Split(pattern~, behavior~, invert~), _]) else {
+    abort("expected a Sequence with Split as its first pre-tokenizer")
+  }
+  guard behavior == "Isolated" && !invert else {
+    abort("unsupported Split pre-tokenizer")
+  }
+  @utils.split_with_pre_tokenizer(input, pattern)
 }
 
 ///|
@@ -190,21 +203,21 @@ pub fn Tokenizer::new(
   let parsed = @json.parse(tokenizer_json) catch {
     e => raise InvalidFormat(e.to_string())
   }
-  let qwen_tokenizer_def : QwenTokenizerJsonFile = @json.from_json(parsed) catch {
+  let qwen_tokenizer_json_file : QwenTokenizerJsonFile = @json.from_json(parsed) catch {
     e => raise InvalidFormat(e.to_string())
   }
 
-  guard qwen_tokenizer_def.model.model_type == "BPE" else {
+  guard qwen_tokenizer_json_file.model.model_type == "BPE" else {
     raise InvalidModel(
-      "expected BPE tokenzier, got \{qwen_tokenizer_def.model.model_type} }",
+      "expected BPE tokenzier, got \{qwen_tokenizer_json_file.model.model_type} }",
     )
   }
 
-  let vocab = qwen_tokenizer_def.model.vocab
+  let vocab = qwen_tokenizer_json_file.model.vocab
   let added_ids : Map[Int32, String] = Map([])
   let added_vocabs : Map[String, Int32] = Map([])
   // merge those special tokens
-  for each_special_token in qwen_tokenizer_def.added_tokens {
+  for each_special_token in qwen_tokenizer_json_file.added_tokens {
     vocab.set(each_special_token.content, each_special_token.id)
     added_vocabs.set(each_special_token.content, each_special_token.id)
     added_ids.set(each_special_token.id, each_special_token.content)
@@ -219,9 +232,16 @@ pub fn Tokenizer::new(
     ids[id] = token
   }
 
-  let merges = qwen_tokenizer_def.model.merges |> parse_merges
+  let merges = qwen_tokenizer_json_file.model.merges |> parse_merges
 
-  { vocab, ids, added_ids, added_vocabs, merges, }
+  {
+    vocab,
+    ids,
+    added_ids,
+    added_vocabs,
+    merges,
+    pre_tokenizer: qwen_tokenizer_json_file.pre_tokenizer,
+  }
 }
 
 ///|
