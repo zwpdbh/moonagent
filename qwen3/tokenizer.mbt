@@ -339,15 +339,63 @@ fn Tokenizer::symbols_to_ids(
 }
 
 ///|
-/// Run the BPE merge loop on one chunk (starts as single-char strings):
-/// repeatedly merge the adjacent pair with the lowest rank until no
-/// adjacent pair exists in `merges`. Merges never cross chunks.
+/// Run ranked BPE on one pre-tokenized chunk.
+///
+/// `chars` starts with one byte-alphabet symbol per UTF-8 byte. These are
+/// strings, not token IDs. `merges` maps (left_symbol, right_symbol) to its
+/// rank. A lower rank means higher merge priority; the rank is not a token ID.
+///
+/// Example:
+///   current = ["a", "b", "c"]
+///   ranks   = {("a", "b") -> 5, ("b", "c") -> 1}
+/// Choose ("b", "c") because rank 1 is lower than rank 5:
+///   next    = ["a", "bc"]
+/// The rand info is stored in the merges which is the learned BPE rules loaded 
+/// from tokenizer.json
+/// 
+/// Implementation steps:
+/// 1. Set `current = chars`. If it has fewer than two symbols, return it.
+/// 2. Start a loop. Scan every adjacent pair in `current` from left to right.
+/// 3. Look up each pair in `merges` and remember the pair with the lowest rank.
+///    Do not count pair frequency and do not choose by token ID.
+/// 4. If no adjacent pair exists in `merges`, return `current`.
+/// 5. Concatenate the selected pair's two strings to form its merged symbol.
+/// 6. Build a new array from left to right. Replace every non-overlapping
+///    occurrence of the selected pair with that merged symbol, skipping two
+///    input symbols after each replacement. Otherwise, copy one symbol.
+/// 7. Make the new array `current` and repeat from step 2. Newly merged symbols
+///    can form new adjacent pairs, so ranks must be checked again.
+/// 8. Return the remaining symbols. Convert them to IDs only after this function.
+/// Merges stay within this chunk; never join symbols from another chunk.
 fn bpe_merge(
   chars : Array[String],
   merges : Map[(String, String), Int32],
 ) -> Array[String] {
-  ignore(merges)
-  chars // TODO: greedy-by-rank merge loop (placeholder: never merges)
+  if chars.length() < 2 {
+    return chars
+  }
+  let merged_chars = build_pairs(chars)
+
+  // TODO: implement the ranked merge loop described above.
+  abort("TODO")
+}
+
+///|
+fn build_pairs(chars : Array[String]) -> Array[(String, String)] {
+  build_pairs_helper([], chars)
+}
+
+///|
+fn build_pairs_helper(
+  acc : Array[(String, String)],
+  rest : Array[String],
+) -> Array[(String, String)] {
+  match rest {
+    [] => acc
+    [x] => abort("UNREACHABLE FOR BUILDING PAIRS")
+    [x, y] => build_pairs_helper(acc + [(x, y)], [])
+    [x, y, .. rest] => build_pairs_helper(acc + [(x, y)], [y] + rest.to_owned())
+  }
 }
 
 ///|
