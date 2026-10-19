@@ -1,4 +1,4 @@
-/// The BPE algorithm from https://sebastianraschka.com/blog/2025/bpe-from-scratch.htm
+/// The BPE algorithm from https://sebastianraschka.com/blog/2025/bpe-from-scratch
 /// And the tokenizer.json file downloaded with Qwen3 model.
 /// Q: what is "train a BPE tokenizer"
 /// A: It means running the BPE learning algorithm over a large text to discover useful
@@ -21,6 +21,7 @@ pub(all) suberror TokenizerError {
   InvalidFormat(String)
   UnknownToken(Int32)
   InvalidModel(String)
+  BpeError(String)
 }
 
 ///|
@@ -370,26 +371,80 @@ fn Tokenizer::symbols_to_ids(
 fn bpe_merge(
   chars : Array[String],
   merges : Map[(String, String), Int32],
-) -> Array[String] {
+) -> Array[String] raise TokenizerError {
   if chars.length() < 2 {
     return chars
   }
-  let merged_chars = build_pairs(chars)
+  let mut chars = chars
 
-  // TODO: implement the ranked merge loop described above.
-  abort("TODO")
+  while true {
+    let paired_chars = build_pairs(chars)
+    guard paired_chars.get(0) is Some(first_pair) else {
+      raise BpeError("There is no first pair during bpe merge")
+    }
+    match find_lowest_rank_pair(paired_chars, merges) {
+      None => break
+      Some(pair_to_merge) => chars = rebuild_chars(pair_to_merge, chars)
+    }
+  }
+  chars
 }
 
 ///|
-fn build_pairs(chars : Array[String]) -> Array[(String, String)] {
+/// pair is the pair to be merged
+/// rebuild the chars by merge two if they next to each other in chars
+fn rebuild_chars(
+  pair : (String, String),
+  chars : Array[String],
+) -> Array[String] {
+  rebuild_chars_helper(pair, chars, [])
+}
+
+///|
+fn rebuild_chars_helper(
+  pair : (String, String),
+  rest : Array[String],
+  acc : Array[String],
+) -> Array[String] {
+  let (a, b) = pair
+  match rest {
+    [] => acc
+    [x] => acc + [x]
+    [x, y, .. rest] if x == a && y == b =>
+      rebuild_chars_helper(pair, rest.to_owned(), acc + [x + y])
+    [x, y, .. rest] =>
+      rebuild_chars_helper(pair, rest.to_owned(), acc + [x] + [y])
+  }
+}
+
+///|
+fn find_lowest_rank_pair(
+  paired_chars : Array[(String, String)],
+  merges : Map[(String, String), Int32],
+) -> (String, String)? {
+  guard paired_chars.get(0) is Some(first_pair) else { return None }
+  let pair_with_lowest_rank = paired_chars.fold(init=first_pair, (
+    acc,
+    current_pair,
+  ) => {
+    let current_rank = merges.get(current_pair)
+    let lowest_rank = merges.get(acc)
+    match (current_rank, lowest_rank) {
+      (Some(x), Some(y)) if x <= y => current_pair
+      _ => acc
+    }
+  })
+
+  Some(pair_with_lowest_rank)
+}
+
+///|
+fn[T] build_pairs(chars : Array[T]) -> Array[(T, T)] {
   build_pairs_helper([], chars)
 }
 
 ///|
-fn build_pairs_helper(
-  acc : Array[(String, String)],
-  rest : Array[String],
-) -> Array[(String, String)] {
+fn[T] build_pairs_helper(acc : Array[(T, T)], rest : Array[T]) -> Array[(T, T)] {
   match rest {
     [] => acc
     [x] => abort("UNREACHABLE FOR BUILDING PAIRS")

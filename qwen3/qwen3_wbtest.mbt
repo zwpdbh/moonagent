@@ -198,3 +198,18 @@ test "split_string handles Unicode letters numbers and symbols" {
   assert_eq(tok.split_string("café 中文😀"), ["café", " 中文", "😀"])
   assert_eq(tok.split_string("٤٥"), ["٤", "٥"])
 }
+
+///|
+test "create_pairs" {
+  let paris = build_pairs([1, 2, 3])
+  assert_eq([(1, 2), (2, 3)], paris)
+
+  let paris = build_pairs([1, 2, 3, 4])
+  assert_eq([(1, 2), (2, 3), (3, 4)], paris)
+
+  let pairs : Array[(Int32, Int32)] = build_pairs([])
+  assert_eq([], pairs)
+
+  let pairs = build_pairs([1, 2])
+  assert_eq([(1, 2)], pairs)
+}
