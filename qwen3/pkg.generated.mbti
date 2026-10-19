@@ -8,6 +8,7 @@ pub(all) suberror TokenizerError {
   InvalidFormat(String)
   UnknownToken(Int)
   InvalidModel(String)
+  BpeError(String)
 }
 
 // Types and methods

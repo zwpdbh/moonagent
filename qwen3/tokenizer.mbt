@@ -379,9 +379,6 @@ fn bpe_merge(
 
   while true {
     let paired_chars = build_pairs(chars)
-    guard paired_chars.get(0) is Some(first_pair) else {
-      raise BpeError("There is no first pair during bpe merge")
-    }
     match find_lowest_rank_pair(paired_chars, merges) {
       None => break
       Some(pair_to_merge) => chars = rebuild_chars(pair_to_merge, chars)
@@ -413,7 +410,7 @@ fn rebuild_chars_helper(
     [x, y, .. rest] if x == a && y == b =>
       rebuild_chars_helper(pair, rest.to_owned(), acc + [x + y])
     [x, y, .. rest] =>
-      rebuild_chars_helper(pair, rest.to_owned(), acc + [x] + [y])
+      rebuild_chars_helper(pair, [y] + rest.to_owned(), acc + [x])
   }
 }
 
@@ -422,20 +419,21 @@ fn find_lowest_rank_pair(
   paired_chars : Array[(String, String)],
   merges : Map[(String, String), Int32],
 ) -> (String, String)? {
-  guard paired_chars.get(0) is Some(first_pair) else { return None }
-  let pair_with_lowest_rank = paired_chars.fold(init=first_pair, (
+  let best : ((String, String), Int32)? = paired_chars.fold(init=None, (
     acc,
     current_pair,
   ) => {
-    let current_rank = merges.get(current_pair)
-    let lowest_rank = merges.get(acc)
-    match (current_rank, lowest_rank) {
-      (Some(x), Some(y)) if x <= y => current_pair
+    match (acc, merges.get(current_pair)) {
+      (None, Some(rank)) => Some((current_pair, rank))
+      (Some((_, best_rank)), Some(rank)) if rank < best_rank =>
+        Some((current_pair, rank))
       _ => acc
     }
   })
-
-  Some(pair_with_lowest_rank)
+  match best {
+    None => None
+    Some((pair, _)) => Some(pair)
+  }
 }
 
 ///|
@@ -447,7 +445,7 @@ fn[T] build_pairs(chars : Array[T]) -> Array[(T, T)] {
 fn[T] build_pairs_helper(acc : Array[(T, T)], rest : Array[T]) -> Array[(T, T)] {
   match rest {
     [] => acc
-    [x] => abort("UNREACHABLE FOR BUILDING PAIRS")
+    [_] => acc
     [x, y] => build_pairs_helper(acc + [(x, y)], [])
     [x, y, .. rest] => build_pairs_helper(acc + [(x, y)], [y] + rest.to_owned())
   }

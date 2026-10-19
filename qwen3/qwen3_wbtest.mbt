@@ -213,3 +213,40 @@ test "create_pairs" {
   let pairs = build_pairs([1, 2])
   assert_eq([(1, 2)], pairs)
 }
+
+///|
+test "bpe_merge returns unchanged symbols when no pair has a rule" {
+  let merges : Map[(String, String), Int32] = Map([])
+  assert_eq(bpe_merge(["a", "b", "c"], merges), ["a", "b", "c"])
+}
+
+///|
+test "bpe_merge chooses the lowest rank instead of the leftmost pair" {
+  let merges : Map[(String, String), Int32] = Map([])
+  merges.set(("a", "b"), 10)
+  merges.set(("b", "c"), 1)
+  assert_eq(bpe_merge(["a", "b", "c"], merges), ["a", "bc"])
+}
+
+///|
+test "bpe_merge skips pairs that have no rule" {
+  let merges : Map[(String, String), Int32] = Map([])
+  merges.set(("a", "b"), 0)
+  assert_eq(bpe_merge(["x", "a", "b"], merges), ["x", "ab"])
+}
+
+///|
+test "bpe_merge applies newly formed pairs and stops at one symbol" {
+  let merges : Map[(String, String), Int32] = Map([])
+  merges.set(("a", "b"), 0)
+  merges.set(("ab", "c"), 1)
+  assert_eq(bpe_merge(["a", "b", "c"], merges), ["abc"])
+}
+
+///|
+test "bpe_merge merges non-overlapping occurrences of the selected pair" {
+  let merges : Map[(String, String), Int32] = Map([])
+  merges.set(("a", "a"), 0)
+  assert_eq(bpe_merge(["a", "a", "a", "a"], merges), ["aa", "aa"])
+  assert_eq(bpe_merge(["a", "a", "a"], merges), ["aa", "a"])
+}
