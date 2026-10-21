@@ -23,6 +23,7 @@ pub(all) suberror TokenizerError {
   InvalidModel(String)
   BpeError(String)
   NoCorrespondingVocab(String)
+  DecodeError(Int32)
 }
 
 ///|
@@ -515,9 +516,26 @@ pub fn Tokenizer::decode(
   let decoded_output = StringBuilder()
   // for temporarily stores consecutive ordinary token strings such as: ["hello", "Ġworld"]
   let pending_symbols : Array[String] = []
-  ignore(self)
-  ignore(ids)
-  ignore(decoded_output)
-  ignore(pending_symbols)
-  abort("TODO: byte-alphabet mapping + utf8 decode")
+  let decoder = @encoding.decoder(@encoding.UTF8)
+  for id in ids {
+    match self.added_ids.get(id) {
+      Some(control_content) => {
+        let normal_string = decoder.consume(
+          @utils.symbols_to_bytes(pending_symbols),
+        ) catch {
+          _ => raise DecodeError(id)
+        }
+        decoded_output.write(normal_string)
+        decoded_output.write(control_content)
+      }
+      None => {
+        guard self.ids.get(id) is Some(token_string) else {
+          raise UnknownToken(id)
+        }
+        pending_symbols.push(token_string)
+      }
+    }
+  }
+
+  decoded_output.to_string()
 }
