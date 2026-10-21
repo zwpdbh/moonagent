@@ -477,11 +477,47 @@ fn[T] build_pairs_helper(acc : Array[(T, T)], rest : Array[T]) -> Array[(T, T)] 
 
 ///|
 /// Token ids -> text. Raises UnknownToken for ids outside the vocab.
+///
+/// Decode reverses encode, but it is not only `ids[id]` followed by string
+/// concatenation. Ordinary IDs map to byte-alphabet token strings, which must
+/// be converted back to bytes before UTF-8 decoding.
+///
+/// Implementation steps:
+/// 1. Walk the input IDs in order. Keep decoded text in `decoded_output` and
+///    consecutive ordinary byte-alphabet token strings in `pending_symbols`.
+/// 2. Check `added_ids` first. If the ID is an added token, flush the pending
+///    ordinary symbols (steps 5-6), then append the added token's literal
+///    content directly. Added tokens must not enter byte-level decoding.
+/// 3. Otherwise, look up the ID in `self.ids`. Raise `UnknownToken(id)` when it
+///    is absent. The result is a byte-alphabet token string such as "Ġworld".
+/// 4. Push that token string onto `pending_symbols`. Do not UTF-8 decode each
+///    token independently: a multi-byte UTF-8 character can be split across
+///    adjacent BPE tokens.
+/// 5. When an added token or the end of input is reached, call
+///    `@utils.symbols_to_bytes` to reverse the fixed byte-alphabet mapping for
+///    all pending symbols, converting symbols such as "Ġ", "Ã", and "©" back
+///    to their original byte values.
+/// 6. UTF-8 decode the accumulated bytes and append the resulting text to the
+///    output builder. Convert malformed UTF-8 into `InvalidFormat`.
+/// 7. Return the accumulated output.
+///
+/// Useful pieces:
+/// - `self.added_ids`: ID -> literal added-token content.
+/// - `self.ids`: ID -> ordinary byte-alphabet token string.
+/// - `@utils.symbols_to_bytes`: byte-alphabet token strings -> original bytes.
+/// - `@encoding.decoder(@encoding.UTF8)`: UTF-8 bytes -> `String`.
 pub fn Tokenizer::decode(
   self : Tokenizer,
   ids : Array[Int32],
 ) -> String raise TokenizerError {
+  // for final human-readable text, it will append 
+  // decoded ordinary text and literal added-token content
+  let decoded_output = StringBuilder()
+  // for temporarily stores consecutive ordinary token strings such as: ["hello", "Ġworld"]
+  let pending_symbols : Array[String] = []
   ignore(self)
   ignore(ids)
+  ignore(decoded_output)
+  ignore(pending_symbols)
   abort("TODO: byte-alphabet mapping + utf8 decode")
 }

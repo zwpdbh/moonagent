@@ -46,3 +46,28 @@ test "bytes_to_symbols handles UTF-8 bytes and empty input" {
   assert_eq(bytes_to_symbols(Bytes::from_array([195, 169])), ["Ã", "©"])
   assert_eq(bytes_to_symbols(Bytes::from_array([])), [])
 }
+
+///|
+test "symbols_to_bytes reverses direct and remapped symbols" {
+  assert_eq(symbols_to_bytes(["A", "Ġ", "!"]), Bytes::from_array([65, 32, 33]))
+  assert_eq(
+    symbols_to_bytes(["Ā", "ĉ", "Ċ", "ġ", "ł", "Ń"]),
+    Bytes::from_array([0, 9, 10, 127, 160, 173]),
+  )
+}
+
+///|
+test "symbols_to_bytes combines adjacent token strings" {
+  assert_eq(
+    symbols_to_bytes(["ca", "fÃ©"]),
+    Bytes::from_array([99, 97, 102, 195, 169]),
+  )
+  assert_eq(symbols_to_bytes([]), Bytes::from_array([]))
+}
+
+///|
+test "byte-level symbol conversion round-trips every byte" {
+  let byte_values : Array[Byte] = Array::makei(256, i => i.to_byte())
+  let bytes = Bytes::from_array(byte_values[:])
+  assert_eq(symbols_to_bytes(bytes_to_symbols(bytes)), bytes)
+}

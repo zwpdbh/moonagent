@@ -20,6 +20,8 @@ pub fn qwen3_model_dir() -> String
 
 pub fn split_with_pre_tokenizer(String, String) -> Array[String]
 
+pub fn symbols_to_bytes(Array[String]) -> Bytes
+
 // Errors
 pub(all) suberror DownloadError {
   BadStatus(Int32, String)
