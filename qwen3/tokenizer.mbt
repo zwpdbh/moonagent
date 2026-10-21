@@ -425,6 +425,16 @@ fn rebuild_chars_helper(
 }
 
 ///|
+/// Find the adjacent pair with the lowest merge rank.
+///
+/// `paired_chars` contains the pairs currently available for merging. Not every
+/// pair necessarily has a rule in `merges`; those pairs are skipped. A lower
+/// rank means the rule appeared earlier in `tokenizer.json`'s `model.merges`
+/// array and therefore has higher priority.
+///
+/// The accumulator stores `Some((pair, rank))` for the best mergeable pair
+/// found so far, or `None` before any mergeable pair has been found. Returning
+/// `None` means no more merges apply and tells the caller to stop BPE.
 fn find_lowest_rank_pair(
   paired_chars : Array[(String, String)],
   merges : Map[(String, String), Int32],
@@ -434,9 +444,13 @@ fn find_lowest_rank_pair(
     current_pair,
   ) => {
     match (acc, merges.get(current_pair)) {
+      // This is the first pair for which we have found a merge rule.
       (None, Some(rank)) => Some((current_pair, rank))
+      // Replace the previous best only when the current rule has a lower rank.
       (Some((_, best_rank)), Some(rank)) if rank < best_rank =>
         Some((current_pair, rank))
+      // Either this pair has no rule, or its rank is not better than the
+      // current best. In both cases, keep the accumulator unchanged.
       _ => acc
     }
   })
