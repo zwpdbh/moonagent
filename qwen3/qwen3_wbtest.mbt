@@ -19,8 +19,10 @@ test "parse_text returns ordinary input when no added tokens are configured" {
 }
 
 ///|
-test "parse_text isolates adjacent added tokens and preserves ordinary text" {
+test "real tokenizer integration: parse, split, and encode" {
   let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.vocab.length(), 151669) // 151643 vocab + 26 added
+  assert_eq(tok.ids[151645], "<|im_end|>")
   let parts = tok.split_text_into_token_string(
     "hello<|im_start|><|im_end|> 世界",
   )
@@ -29,6 +31,38 @@ test "parse_text isolates adjacent added tokens and preserves ordinary text" {
   assert_true(parts[1] is Added("<|im_start|>"))
   assert_true(parts[2] is Added("<|im_end|>"))
   assert_true(parts[3] is Ordinay(" 世界"))
+  assert_eq(tok.split_string(""), [])
+  assert_eq(tok.split_string("Explain large language models."), [
+    "Explain", " large", " language", " models", ".",
+  ])
+  assert_eq(tok.split_string("I'll"), ["I", "'ll"])
+  assert_eq(tok.split_string("I'M"), ["I", "'M"])
+  assert_eq(tok.split_string("we're"), ["we", "'re"])
+  assert_eq(tok.split_string("they've"), ["they", "'ve"])
+  assert_eq(tok.split_string("he'd"), ["he", "'d"])
+  assert_eq(tok.split_string("I'll I'M we're they've he'd"), [
+    "I", "'ll", " I", "'M", " we", "'re", " they", "'ve", " he", "'d",
+  ])
+  assert_eq(tok.split_string("123 !?..."), ["1", "2", "3", " !?..."])
+  assert_eq(tok.split_string("  hello"), [" ", " hello"])
+  assert_eq(tok.split_string("   !"), ["  ", " !"])
+  assert_eq(tok.split_string("hello  "), ["hello", "  "])
+  assert_eq(tok.split_string("Hello...\n\nWorld"), ["Hello", "...\n\n", "World"])
+  assert_eq(tok.split_string("a \n  b"), ["a", " \n", " ", " b"])
+  assert_eq(tok.split_string(" \tfoo"), [" ", "\tfoo"])
+  assert_eq(tok.split_string("café 中文😀"), ["café", " 中文", "😀"])
+  assert_eq(tok.split_string("٤٥"), ["٤", "٥"])
+  assert_eq(tok.encode(""), [])
+  assert_eq(tok.encode("Explain large language models."), [
+    840, 20772, 3460, 4128, 4119, 13,
+  ])
+  assert_eq(tok.encode("hello world"), [14990, 1879])
+  assert_eq(tok.encode("  hello"), [220, 23811])
+  assert_eq(tok.encode("hello<|im_end|>"), [14990, 151645])
+  assert_eq(tok.encode("<|im_start|>hello<|im_end|>"), [151644, 14990, 151645])
+  assert_eq(tok.encode("café"), [924, 58858])
+  assert_eq(tok.encode("中文"), [104811])
+  assert_eq(tok.encode("😀"), [141334])
 }
 
 ///|
@@ -124,13 +158,6 @@ test "parse folds added_tokens into both maps" {
 }
 
 ///|
-test "load real tokenizer.json" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.vocab.length(), 151669) // 151643 vocab + 26 added
-  assert_eq(tok.ids[151645], "<|im_end|>")
-}
-
-///|
 test "pre_tokenizer decodes Sequence of Split + ByteLevel" {
   let j = @json.parse(
     (
@@ -163,42 +190,6 @@ test "pre_tokenizer decodes Sequence of Split + ByteLevel" {
   assert_eq(add_prefix_space, false)
   assert_eq(use_regex, false)
   assert_eq(trim_offsets, false)
-}
-
-///|
-test "split_string splits words contractions numbers and punctuation" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.split_string(""), [])
-  assert_eq(tok.split_string("Explain large language models."), [
-    "Explain", " large", " language", " models", ".",
-  ])
-  assert_eq(tok.split_string("I'll"), ["I", "'ll"])
-  assert_eq(tok.split_string("I'M"), ["I", "'M"])
-  assert_eq(tok.split_string("we're"), ["we", "'re"])
-  assert_eq(tok.split_string("they've"), ["they", "'ve"])
-  assert_eq(tok.split_string("he'd"), ["he", "'d"])
-  assert_eq(tok.split_string("I'll I'M we're they've he'd"), [
-    "I", "'ll", " I", "'M", " we", "'re", " they", "'ve", " he", "'d",
-  ])
-  assert_eq(tok.split_string("123 !?..."), ["1", "2", "3", " !?..."])
-}
-
-///|
-test "split_string preserves Qwen whitespace and newline boundaries" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.split_string("  hello"), [" ", " hello"])
-  assert_eq(tok.split_string("   !"), ["  ", " !"])
-  assert_eq(tok.split_string("hello  "), ["hello", "  "])
-  assert_eq(tok.split_string("Hello...\n\nWorld"), ["Hello", "...\n\n", "World"])
-  assert_eq(tok.split_string("a \n  b"), ["a", " \n", " ", " b"])
-  assert_eq(tok.split_string(" \tfoo"), [" ", "\tfoo"])
-}
-
-///|
-test "split_string handles Unicode letters numbers and symbols" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.split_string("café 中文😀"), ["café", " 中文", "😀"])
-  assert_eq(tok.split_string("٤٥"), ["٤", "٥"])
 }
 
 ///|
@@ -251,35 +242,4 @@ test "bpe_merge merges non-overlapping occurrences of the selected pair" {
   merges.set(("a", "a"), 0)
   assert_eq(bpe_merge(["a", "a", "a", "a"], merges), ["aa", "aa"])
   assert_eq(bpe_merge(["a", "a", "a"], merges), ["aa", "a"])
-}
-
-///|
-test "encode matches the chapter roadmap baseline" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.encode(""), [])
-  assert_eq(tok.encode("Explain large language models."), [
-    840, 20772, 3460, 4128, 4119, 13,
-  ])
-}
-
-///|
-test "encode handles ordinary words and leading whitespace" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.encode("hello world"), [14990, 1879])
-  assert_eq(tok.encode("  hello"), [220, 23811])
-}
-
-///|
-test "encode emits added token IDs at their original positions" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.encode("hello<|im_end|>"), [14990, 151645])
-  assert_eq(tok.encode("<|im_start|>hello<|im_end|>"), [151644, 14990, 151645])
-}
-
-///|
-test "encode handles precomposed Unicode and emoji" {
-  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  assert_eq(tok.encode("café"), [924, 58858])
-  assert_eq(tok.encode("中文"), [104811])
-  assert_eq(tok.encode("😀"), [141334])
 }
