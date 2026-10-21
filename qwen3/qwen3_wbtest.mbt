@@ -12,16 +12,18 @@ test "parse_text returns ordinary input when no added tokens are configured" {
     merges: Map([]),
     pre_tokenizer: Sequence([]),
   }
-  let parts = tok.parse_text("plain 世界")
+  let parts = tok.split_text_into_token_string("plain 世界")
   assert_eq(parts.length(), 1)
   assert_true(parts[0] is Ordinay("plain 世界"))
-  assert_eq(tok.parse_text("").length(), 0)
+  assert_eq(tok.split_text_into_token_string("").length(), 0)
 }
 
 ///|
 test "parse_text isolates adjacent added tokens and preserves ordinary text" {
   let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
-  let parts = tok.parse_text("hello<|im_start|><|im_end|> 世界")
+  let parts = tok.split_text_into_token_string(
+    "hello<|im_start|><|im_end|> 世界",
+  )
   assert_eq(parts.length(), 4)
   assert_true(parts[0] is Ordinay("hello"))
   assert_true(parts[1] is Added("<|im_start|>"))
@@ -42,7 +44,7 @@ test "parse_text prefers the longest added token at the same position" {
     merges: Map([]),
     pre_tokenizer: Sequence([]),
   }
-  let parts = tok.parse_text("<|a|>x<|a|>")
+  let parts = tok.split_text_into_token_string("<|a|>x<|a|>")
   assert_eq(parts.length(), 2)
   assert_true(parts[0] is Added("<|a|>x"))
   assert_true(parts[1] is Added("<|a|>"))

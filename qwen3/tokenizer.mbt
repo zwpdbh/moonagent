@@ -157,7 +157,13 @@ fn Tokenizer::split_string(self : Self, input : String) -> Array[String] {
 }
 
 ///|
-fn Tokenizer::parse_text(self : Self, text : String) -> Array[TokenString] {
+/// Use the known added_vocabs to first split the text into Array of TokenString.
+/// The purpose of it is to handle those special text pattern first, then for ordinary
+/// text use bpe to encode
+fn Tokenizer::split_text_into_token_string(
+  self : Self,
+  text : String,
+) -> Array[TokenString] {
   let tokens = self.added_vocabs.keys().to_array()
   tokens.sort_by_key(token => -token.length())
   let regex : @string.Regex? = tokens.fold(init=None, (acc, token) => {
@@ -292,7 +298,7 @@ pub fn Tokenizer::encode(
   self : Tokenizer,
   text : String,
 ) -> Array[Int32] raise TokenizerError {
-  let token_strings = self.parse_text(text)
+  let token_strings = self.split_text_into_token_string(text)
 
   let token_ids : Array[Int32] = []
 

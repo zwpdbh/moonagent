@@ -22,7 +22,7 @@ pub fn split_with_pre_tokenizer(String, String) -> Array[String]
 
 // Errors
 pub(all) suberror DownloadError {
-  BadStatus(Int, String)
+  BadStatus(Int32, String)
   TooManyRedirects(String)
   DownloadFailed(String)
   BadRedirect(String)
