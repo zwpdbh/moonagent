@@ -520,13 +520,11 @@ pub fn Tokenizer::decode(
   for id in ids {
     match self.added_ids.get(id) {
       Some(control_content) => {
-        let normal_string = decoder.consume(
-          @utils.symbols_to_bytes(pending_symbols),
-        ) catch {
-          _ => raise DecodeError(id)
-        }
+        let normal_string = decode_pending_symbols(decoder, pending_symbols)
         decoded_output.write(normal_string)
         decoded_output.write(control_content)
+
+        pending_symbols.clear()
       }
       None => {
         guard self.ids.get(id) is Some(token_string) else {
@@ -537,5 +535,19 @@ pub fn Tokenizer::decode(
     }
   }
 
+  // DO not forget the left pending symbols
+  let normal_string = decode_pending_symbols(decoder, pending_symbols)
+  decoded_output.write(normal_string)
+
   decoded_output.to_string()
+}
+
+///|
+fn decode_pending_symbols(
+  decoder : @encoding.Decoder,
+  pending_symbols : Array[String],
+) -> String raise TokenizerError {
+  decoder.decode(@utils.symbols_to_bytes(pending_symbols)) catch {
+    _ => raise InvalidFormat("invalid UTF-8 in ordinary token sequence")
+  }
 }

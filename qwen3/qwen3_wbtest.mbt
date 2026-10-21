@@ -19,7 +19,7 @@ test "parse_text returns ordinary input when no added tokens are configured" {
 }
 
 ///|
-test "real tokenizer integration: parse, split, and encode" {
+test "real tokenizer integration: parse, split, encode, and decode" {
   let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
   assert_eq(tok.vocab.length(), 151669) // 151643 vocab + 26 added
   assert_eq(tok.ids[151645], "<|im_end|>")
@@ -63,6 +63,16 @@ test "real tokenizer integration: parse, split, and encode" {
   assert_eq(tok.encode("café"), [924, 58858])
   assert_eq(tok.encode("中文"), [104811])
   assert_eq(tok.encode("😀"), [141334])
+  assert_eq(tok.decode([]), "")
+  assert_eq(tok.decode([151644]), "<|im_start|>")
+  assert_eq(tok.decode([840, 20772, 3460, 4128, 4119, 13]), "Explain large language models.")
+  assert_eq(tok.decode([14990, 1879]), "hello world")
+  assert_eq(tok.decode([220, 23811]), "  hello")
+  assert_eq(tok.decode([14990, 151645]), "hello<|im_end|>")
+  assert_eq(tok.decode([151644, 14990, 151645]), "<|im_start|>hello<|im_end|>")
+  assert_eq(tok.decode([924, 58858]), "café")
+  assert_eq(tok.decode([104811]), "中文")
+  assert_eq(tok.decode([141334]), "😀")
 }
 
 ///|
