@@ -252,3 +252,34 @@ test "bpe_merge merges non-overlapping occurrences of the selected pair" {
   assert_eq(bpe_merge(["a", "a", "a", "a"], merges), ["aa", "aa"])
   assert_eq(bpe_merge(["a", "a", "a"], merges), ["aa", "a"])
 }
+
+///|
+test "encode matches the chapter roadmap baseline" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.encode(""), [])
+  assert_eq(tok.encode("Explain large language models."), [
+    840, 20772, 3460, 4128, 4119, 13,
+  ])
+}
+
+///|
+test "encode handles ordinary words and leading whitespace" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.encode("hello world"), [14990, 1879])
+  assert_eq(tok.encode("  hello"), [220, 23811])
+}
+
+///|
+test "encode emits added token IDs at their original positions" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.encode("hello<|im_end|>"), [14990, 151645])
+  assert_eq(tok.encode("<|im_start|>hello<|im_end|>"), [151644, 14990, 151645])
+}
+
+///|
+test "encode handles precomposed Unicode and emoji" {
+  let tok = Tokenizer::load(@utils.qwen3_model_dir() + "/tokenizer.json")
+  assert_eq(tok.encode("café"), [924, 58858])
+  assert_eq(tok.encode("中文"), [104811])
+  assert_eq(tok.encode("😀"), [141334])
+}

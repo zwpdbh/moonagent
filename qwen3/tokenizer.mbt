@@ -22,6 +22,7 @@ pub(all) suberror TokenizerError {
   UnknownToken(Int32)
   InvalidModel(String)
   BpeError(String)
+  NoCorrespondingVocab(String)
 }
 
 ///|
@@ -340,9 +341,12 @@ fn Tokenizer::symbols_to_ids(
   self : Tokenizer,
   symbols : Array[String],
 ) -> Array[Int32] raise TokenizerError {
-  ignore(self)
-  ignore(symbols)
-  abort("TODO")
+  symbols.map(each => {
+    match self.vocab.get(each) {
+      Some(i) => i
+      None => raise NoCorrespondingVocab("\{each}")
+    }
+  })
 }
 
 ///|

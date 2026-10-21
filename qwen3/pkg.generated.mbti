@@ -9,6 +9,7 @@ pub(all) suberror TokenizerError {
   UnknownToken(Int32)
   InvalidModel(String)
   BpeError(String)
+  NoCorrespondingVocab(String)
 }
 
 // Types and methods
