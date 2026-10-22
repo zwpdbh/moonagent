@@ -10,9 +10,9 @@ pub fn bytes_to_symbols(Bytes) -> Array[String]
 
 pub async fn download_file(String, String, backup_url? : String) -> String
 
-pub fn expect_key(Map[String, Json], String, what~ : String) -> Json raise UtilJsonError
+pub fn expect_key(Map[String, Json], String, what~ : String, path~ : @json.JsonPath) -> Json raise @json.JsonDecodeError
 
-pub fn expect_object(Json, what~ : String) -> Map[String, Json] raise UtilJsonError
+pub fn expect_object(Json, what~ : String, path~ : @json.JsonPath) -> Map[String, Json] raise @json.JsonDecodeError
 
 pub fn[T : @json.FromJson] extract(Map[String, Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
 
@@ -28,10 +28,6 @@ pub(all) suberror DownloadError {
   TooManyRedirects(String)
   DownloadFailed(String)
   BadRedirect(String)
-}
-
-pub(all) suberror UtilJsonError {
-  InvalidFormat(String)
 }
 
 // Types and methods

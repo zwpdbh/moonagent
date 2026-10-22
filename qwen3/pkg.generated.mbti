@@ -1,10 +1,6 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "username/qwen3"
 
-import {
-  "moonbitlang/core/json",
-}
-
 // Values
 
 // Errors
@@ -28,7 +24,7 @@ pub(all) suberror TokenizerError {
 }
 
 // Types and methods
-type Config derive(@json.FromJson)
+type Config
 
 pub enum DType {
   BF16

@@ -1,9 +1,4 @@
 ///|
-pub(all) suberror UtilJsonError {
-  InvalidFormat(String)
-}
-
-///|
 /// Extract required field `key` from a JSON object and decode it as `T`.
 ///
 /// The `T : FromJson` constraint means `T` knows how to decode itself from a
@@ -25,26 +20,38 @@ pub fn[T : FromJson] extract(
 }
 
 ///|
-/// Extract the object at a JSON value, or raise with a clear message.
+/// Decode a JSON value as an object, or raise a standard `JsonDecodeError`.
+///
+/// `what` describes the value being decoded, and `path` points to its current
+/// location in the document so the error message carries useful context.
 pub fn expect_object(
   j : Json,
   what~ : String,
-) -> Map[String, Json] raise UtilJsonError {
+  path~ : @json.JsonPath,
+) -> Map[String, Json] raise @json.JsonDecodeError {
   guard j is Json::Object(o) else {
-    raise InvalidFormat("\{what}: expected JSON object")
+    raise @json.JsonDecodeError((path, "\{what}: expected JSON object"))
   }
   o
 }
 
 ///|
-/// Extract a required key from a JSON object, or raise with the key name.
+/// Return the raw JSON value for a required object key.
+///
+/// Unlike `extract`, this does not decode the value. It is useful when an enum
+/// needs to inspect a discriminator before choosing how to decode the value.
+/// The error path points to the missing key.
 pub fn expect_key(
   obj : Map[String, Json],
   key : String,
   what~ : String,
-) -> Json raise UtilJsonError {
+  path~ : @json.JsonPath,
+) -> Json raise @json.JsonDecodeError {
   match obj.get(key) {
     Some(v) => v
-    None => raise InvalidFormat("\{what}: missing \"{key}\"")
+    None =>
+      raise @json.JsonDecodeError(
+        (path.add_key(key), "\{what}: missing \"\{key}\""),
+      )
   }
 }

@@ -65,7 +65,10 @@ test "real tokenizer integration: parse, split, encode, and decode" {
   assert_eq(tok.encode("😀"), [141334])
   assert_eq(tok.decode([]), "")
   assert_eq(tok.decode([151644]), "<|im_start|>")
-  assert_eq(tok.decode([840, 20772, 3460, 4128, 4119, 13]), "Explain large language models.")
+  assert_eq(
+    tok.decode([840, 20772, 3460, 4128, 4119, 13]),
+    "Explain large language models.",
+  )
   assert_eq(tok.decode([14990, 1879]), "hello world")
   assert_eq(tok.decode([220, 23811]), "  hello")
   assert_eq(tok.decode([14990, 151645]), "hello<|im_end|>")
@@ -252,4 +255,43 @@ test "bpe_merge merges non-overlapping occurrences of the selected pair" {
   merges.set(("a", "a"), 0)
   assert_eq(bpe_merge(["a", "a", "a", "a"], merges), ["aa", "aa"])
   assert_eq(bpe_merge(["a", "a", "a"], merges), ["aa", "a"])
+}
+
+///|
+test "DType parses bfloat16" {
+  let parsed : DType = @json.from_json(@json.parse("\"bfloat16\""))
+  assert_true(parsed is BF16)
+}
+
+///|
+test "DType rejects unsupported dtype strings" {
+  let raised = try {
+    let parsed : DType = @json.from_json(@json.parse("\"float32\""))
+    ignore(parsed)
+    false
+  } catch {
+    _ => true
+  }
+  assert_true(raised)
+}
+
+///|
+test "Config parses the real Qwen3 config.json" {
+  let content = @fs.read_file_to_string(
+    @utils.qwen3_model_dir() + "/config.json",
+  )
+  let config : Config = @json.from_json(@json.parse(content))
+  assert_eq(config.architectures, ["Qwen3ForCausalLM"])
+  assert_eq(config.hidden_size, 1024)
+  assert_eq(config.num_hidden_layers, 28)
+  assert_eq(config.num_attention_heads, 16)
+  assert_eq(config.num_key_value_heads, 8)
+  assert_eq(config.head_dim, 128)
+  assert_eq(config.intermediate_size, 3072)
+  assert_eq(config.vocab_size, 151936)
+  assert_eq(config.rope_theta, 1000000)
+  assert_true(config.rope_scaling is None)
+  assert_true(config.sliding_window is None)
+  assert_true(config.tie_word_embeddings)
+  assert_true(config.torch_dtype is BF16)
 }
