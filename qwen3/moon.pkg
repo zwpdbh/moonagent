@@ -6,6 +6,7 @@ import {
   "moonbitlang/x/fs",
   "moonbitlang/x/encoding",
   "moonbitlang/core/string",
+  "moonbitlang/async",
   "moonbitlang/async/fs" @async_fs,
   "zw/utils",
 }

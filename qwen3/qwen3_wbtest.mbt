@@ -295,3 +295,17 @@ test "Config parses the real Qwen3 config.json" {
   assert_true(config.tie_word_embeddings)
   assert_true(config.torch_dtype is BF16)
 }
+
+///|
+async test "read_tensor_entries_from_safetensors parses the real header" {
+  let entries = read_tensor_entries_from_safetensors(
+    @utils.qwen3_model_dir() + "/model.safetensors",
+  )
+  assert_eq(entries.length(), 311)
+  guard entries.get("model.embed_tokens.weight") is Some(entry) else {
+    abort("model.embed_tokens.weight should exist")
+  }
+  assert_true(entry.dtype is BF16)
+  assert_eq(entry.shape, [151936, 1024])
+  assert_eq(entry.data_offsets, [311164928, 622329856])
+}

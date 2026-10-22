@@ -47,7 +47,7 @@ pub(all) suberror SafeTensorsError {
 /// Mirrors one tensor entry inside the safetensors JSON header.
 /// Only used during parsing
 priv struct TensorHeaderEntry {
-  dtype : String
+  dtype : DType
   shape : Array[Int32]
   data_offsets : Array[Int32]
 } derive(FromJson)
@@ -95,9 +95,9 @@ fn SafeTensors::tensor_bytes(
 }
 
 ///|
-async fn read_header_length(
+async fn read_tensor_entries_from_safetensors(
   path : String,
-) -> TensorHeaderEntry raise SafeTensorsError {
+) -> Map[String, TensorHeaderEntry] raise SafeTensorsError {
   let file = @async_fs.open(path, mode=@async_fs.Mode::ReadOnly) catch {
     _ => raise InvalidFormat("cannot open safetensors file")
   }
@@ -111,14 +111,45 @@ async fn read_header_length(
     _ => raise InvalidFormat("cannot read safetensors header bytes")
   }
 
-  abort("TODO")
+  header_bytes |> parse_tensor_header_entries()
 }
 
 ///|
+/// 1. From Bytes to String (Json Serilized String)
+/// 2. String to Json 
+/// 3. Use Json::Object to extract entries which is name, value entries.
+/// Ignore the name which is "__metadata__"
+/// 4. added name, and value which is TensorHeaderEntry into Map
+/// 5. return final result 
 fn parse_tensor_header_entries(
   header_bytes : Bytes,
 ) -> Map[String, TensorHeaderEntry] raise SafeTensorsError {
-  abort("TODO")
+  // decode bytes into UTF8 string
+  let decoder = @encoding.decoder(UTF8)
+  let json_string = decoder.decode(header_bytes) catch {
+    _ => raise InvalidFormat("failed to decode header bytes")
+  }
+  // from string to json obj
+  let json = @json.parse(json_string) catch {
+    _ => raise InvalidFormat("failed to parse header string into json object")
+  }
+
+  // from json obj get top level pairs
+  guard json is Json::Object(entries) else {
+    raise InvalidFormat("failed to get top level json entries")
+  }
+
+  let header_entries : Map[String, TensorHeaderEntry] = Map([])
+  for (key, entry) in entries {
+    if key == "__metadata__" {
+      continue
+    }
+    let header_entry : TensorHeaderEntry = @json.from_json(entry) catch {
+      _ => raise InvalidFormat("failed to parase json obj as TensorHeaderEntry")
+    }
+    header_entries.set(key, header_entry)
+  }
+  header_entries
 }
 
 ///|
