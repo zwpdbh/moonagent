@@ -1,9 +1,17 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "username/qwen3"
 
+import {
+  "moonbitlang/core/json",
+}
+
 // Values
 
 // Errors
+pub(all) suberror ConfigError {
+  InvalidFormat(String)
+}
+
 pub(all) suberror SafeTensorsError {
   InvalidFormat(String)
   UnknowTensor(String)
@@ -20,6 +28,12 @@ pub(all) suberror TokenizerError {
 }
 
 // Types and methods
+type Config derive(@json.FromJson)
+
+pub enum DType {
+  BF16
+}
+
 type SafeTensors
 pub fn SafeTensors::load(String) -> Self raise SafeTensorsError
 pub fn SafeTensors::tensor_f32(Self, String) -> (Array[Float], Array[Int32]) raise SafeTensorsError

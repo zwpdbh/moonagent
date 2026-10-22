@@ -1,3 +1,4 @@
+///|
 /// For download files:
 /// zw@wei:~/code/moonbit_programming/moonagent$ ll ~/.cache/models/Qwen/Qwen3-0.6B/
 // total 1483604
@@ -10,19 +11,36 @@
 // -rw-r--r-- 1 zw zw   11422654 Oct  8 21:15 tokenizer.json
 // -rw-r--r-- 1 zw zw       9732 Oct  8 21:15 tokenizer_config.json
 // -rw-r--r-- 1 zw zw    2776833 Oct  8 21:18 vocab.json
-/// Q: what are we doing.
-/// Q: how to check the eplore file model.safetensors
+/// When "load model" in the LLM context, it means:
+/// preparing the trained model so your program can run inference with it.
+/// A download model usually contain following parts
+/// 1. architecture configuration (config.json). It describe the model shape, like blueprint
+/// 2. Learned weight (model.safetensors). It stores the numerical parameters learned during trainning.
+/// 3. Tokenizer. (tokenizer.json, vocab.json, merges.text). It have rules for converts text into token IDs and back to text.
+/// 
+/// So, "loading" means multiple level
+/// 1. loading the file, read the safetensors bytes from disk (bytes in memory)
+/// 2. parse the safetensors header (bytes -> tensor name, shapes, dtypes, offsets), this file's job
+/// 3. converting tensors (raw BF6 bytes -> Array[Float])
+/// Convert raw BF16 bytes into usable numeric arrays, such as F32 for the CPU reference implementation:
+/// 4. Constructing the model, using config.json to create Qwen3 architecture and bind each named 
+/// tensor to the corrct model (configuration + tensors → runnable Qwen3 model)
+/// 5. Moving to device: Later, loading can also mean copying weights to GPU memory. That is a separate optimization phase.
+/// 
+/// General step in this file
+/// 1. Read config.json to know the architecture.
+/// 2. Create the corresponding model structure.
+/// 3. Read model.safetensors.
+/// 4. Assign each named weight tensor to the correct component.
+/// 5. Validate that tensor shapes match the configuration.
+/// 
+///
 
 ///|
 pub(all) suberror SafeTensorsError {
   InvalidFormat(String)
   UnknowTensor(String)
   UnsupportedDtype(String)
-}
-
-///|
-priv enum DType {
-  BF16
 }
 
 ///|

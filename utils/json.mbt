@@ -4,8 +4,12 @@ pub(all) suberror UtilJsonError {
 }
 
 ///|
-/// Helper: extract required field `key` and decode it as `T`,
-/// keeping the JSON path for error messages.
+/// Extract required field `key` from a JSON object and decode it as `T`.
+///
+/// The `T : FromJson` constraint means `T` knows how to decode itself from a
+/// JSON value. `path` records the current location so errors point to the
+/// missing or malformed field. This raises `JsonDecodeError` when the key is
+/// absent or `T`'s decoder rejects the value.
 pub fn[T : FromJson] extract(
   obj : Map[String, Json],
   key : String,
