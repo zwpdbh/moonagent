@@ -93,3 +93,45 @@ fn SafeTensors::tensor_bytes(
 ) -> BytesView raise SafeTensorsError {
   abort("TODO")
 }
+
+///|
+async fn read_header_length(
+  path : String,
+) -> TensorHeaderEntry raise SafeTensorsError {
+  let file = @async_fs.open(path, mode=@async_fs.Mode::ReadOnly) catch {
+    _ => raise InvalidFormat("cannot open safetensors file")
+  }
+  defer file.close()
+
+  let header_length_bytes = file.read_exactly_at(8, position=0) catch {
+    _ => raise InvalidFormat("cannot read safetensors header length")
+  }
+  let header_size = read_u64_le(header_length_bytes)
+  let header_bytes = file.read_exactly_at(header_size.to_int(), position=8) catch {
+    _ => raise InvalidFormat("cannot read safetensors header bytes")
+  }
+
+  abort("TODO")
+}
+
+///|
+fn parse_tensor_header_entries(
+  header_bytes : Bytes,
+) -> Map[String, TensorHeaderEntry] raise SafeTensorsError {
+  abort("TODO")
+}
+
+///|
+/// u64le(value) means 
+/// u64 means “read a 64-bit unsigned integer.”
+/// le means little-endian.
+/// value is the extracted integer.
+fn read_u64_le(bytes : Bytes) -> UInt64 raise SafeTensorsError {
+  match bytes[:] {
+    [u64le(value)] => value
+    _ =>
+      raise InvalidFormat(
+        "expected exactly 8 bytes for the safetensors header length",
+      )
+  }
+}

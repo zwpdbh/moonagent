@@ -117,7 +117,7 @@ pub enum DType {
 impl FromJson for DType with fn from_json(json, path) {
   let value : String = @json.from_json(json, path~)
   match value {
-    "bfloat16" => BF16
+    "bfloat16" | "BF16" => BF16
     _ => raise @json.JsonDecodeError((path, "unsupported dtype \"\{value}\""))
   }
 }

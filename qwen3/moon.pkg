@@ -1,4 +1,4 @@
-warnings = "-unused_type_declaration-unused_package-unused_field-unused_error_type-unused_value-unused_constructor"
+warnings = "-unused_type_declaration-unused_package-unused_field-unused_error_type-unused_value-unused_constructor-struct_never_constructed-missing_priv"
 
 import {
   "moonbitlang/core/json",
@@ -6,5 +6,6 @@ import {
   "moonbitlang/x/fs",
   "moonbitlang/x/encoding",
   "moonbitlang/core/string",
+  "moonbitlang/async/fs" @async_fs,
   "zw/utils",
 }
