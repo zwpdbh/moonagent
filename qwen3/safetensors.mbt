@@ -41,16 +41,44 @@ pub(all) suberror SafeTensorsError {
   InvalidFormat(String)
   UnknowTensor(String)
   UnsupportedDtype(String)
-}
+} derive(Debug)
+
+///|
+pub extend SafeTensorsError with @debug.Debug::{to_repr}
 
 ///|
 /// Mirrors one tensor entry inside the safetensors JSON header.
 /// Only used during parsing
+/// It is metadata about one tensor, like a catalog card.
+/// It does not contain the learned number themselves. It tells
+/// where and how to read them.
 priv struct TensorHeaderEntry {
+  // how each number is encoded
   dtype : DType
+  // the dimensions of the tensor
   shape : Array[Int32]
-  data_offsets : Array[Int32]
+  // where its bytes are stored
+  data_offsets : TensorOffsets
 } derive(FromJson)
+
+///|
+priv struct TensorOffsets {
+  start : Int32
+  end : Int32
+} derive(Eq, Debug)
+
+///|
+/// Parse a two-element safetensors `data_offsets` array.
+impl FromJson for TensorOffsets with fn from_json(json, path) {
+  guard json is Json::Array([start, end]) else {
+    raise @json.JsonDecodeError(
+      (path, "TensorOffsets: expected a two-element array"),
+    )
+  }
+  let start : Int32 = @json.from_json(start, path=path.add_index(0))
+  let end : Int32 = @json.from_json(end, path=path.add_index(1))
+  { start, end, }
+}
 
 ///|
 /// Normalize runtime metadata for one tensor
@@ -63,9 +91,16 @@ priv struct TensorInfo {
 }
 
 ///|
+struct SafeTensorsHeader {
+  entries : Map[String, TensorHeaderEntry]
+  // each TensorHeaderEntry's data_offsets is relative to data_start_at
+  data_start_at : Int32
+}
+
+///|
 struct SafeTensors {
   tensors : Map[String, TensorInfo]
-  bytes : Bytes
+  path : String
 }
 
 ///|
@@ -95,9 +130,11 @@ fn SafeTensors::tensor_bytes(
 }
 
 ///|
-async fn read_tensor_entries_from_safetensors(
+/// Load model.safetensors header parts parse it as Map[String, TensorHeaderEntry]
+/// The key is 
+async fn read_safetensors_header(
   path : String,
-) -> Map[String, TensorHeaderEntry] raise SafeTensorsError {
+) -> SafeTensorsHeader raise SafeTensorsError {
   let file = @async_fs.open(path, mode=@async_fs.Mode::ReadOnly) catch {
     _ => raise InvalidFormat("cannot open safetensors file")
   }
@@ -111,7 +148,8 @@ async fn read_tensor_entries_from_safetensors(
     _ => raise InvalidFormat("cannot read safetensors header bytes")
   }
 
-  header_bytes |> parse_tensor_header_entries()
+  let entries = header_bytes |> parse_tensor_header_entries()
+  SafeTensorsHeader::{ entries, data_start_at: 8 + header_size.to_int(), }
 }
 
 ///|
@@ -145,7 +183,10 @@ fn parse_tensor_header_entries(
       continue
     }
     let header_entry : TensorHeaderEntry = @json.from_json(entry) catch {
-      _ => raise InvalidFormat("failed to parase json obj as TensorHeaderEntry")
+      e =>
+        raise InvalidFormat(
+          "failed to parse tensor header entry \{key}: \{e.to_string()}",
+        )
     }
     header_entries.set(key, header_entry)
   }

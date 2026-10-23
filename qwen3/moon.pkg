@@ -3,6 +3,7 @@ warnings = "-unused_type_declaration-unused_package-unused_field-unused_error_ty
 import {
   "moonbitlang/core/json",
   "moonbitlang/core/int",
+  "moonbitlang/core/debug",
   "moonbitlang/x/fs",
   "moonbitlang/x/encoding",
   "moonbitlang/core/string",

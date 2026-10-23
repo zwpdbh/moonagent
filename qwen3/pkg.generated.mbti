@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "username/qwen3"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
 
 // Errors
@@ -12,7 +16,8 @@ pub(all) suberror SafeTensorsError {
   InvalidFormat(String)
   UnknowTensor(String)
   UnsupportedDtype(String)
-}
+} derive(@debug.Debug)
+pub fn SafeTensorsError::to_repr(Self) -> @debug.Repr
 
 pub(all) suberror TokenizerError {
   InvalidFormat(String)
@@ -34,6 +39,8 @@ type SafeTensors
 pub fn SafeTensors::load(String) -> Self raise SafeTensorsError
 pub fn SafeTensors::tensor_f32(Self, String) -> (Array[Float], Array[Int32]) raise SafeTensorsError
 pub fn SafeTensors::tensor_names(Self) -> Array[String]
+
+type SafeTensorsHeader
 
 type Tokenizer
 pub fn Tokenizer::decode(Self, Array[Int32]) -> String raise TokenizerError
