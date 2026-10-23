@@ -1,0 +1,553 @@
+/// The BPE algorithm from https://sebastianraschka.com/blog/2025/bpe-from-scratch
+/// And the tokenizer.json file downloaded with Qwen3 model.
+/// Q: what is "train a BPE tokenizer"
+/// A: It means running the BPE learning algorithm over a large text to discover useful
+/// subwords and save them as:
+/// A vocabular
+/// An order list of merge rules: which two symbols can be combined and their priority.
+/// Q: Is tokenizer.json the result from trainning?
+/// A: It is. Our job is to load the tokenizer and implement encode and decode using its saved rules.
+/// tokenizer.json
+/// ├── model.vocab        ← learned token-to-ID vocabulary
+/// ├── model.merges       ← learned, ordered BPE merge rules
+/// ├── normalizer         ← how to normalize input text
+/// ├── pre_tokenizer      ← how to split text before applying BPE
+/// ├── added_tokens       ← special/control tokens such as <|im_start|>
+/// ├── post_processor     ← additional processing configuration
+/// └── decoder            ← how to convert tokens back into text
+
+///|
+pub(all) suberror TokenizerError {
+  InvalidFormat(String)
+  UnknownToken(Int32)
+  InvalidModel(String)
+  BpeError(String)
+  NoCorrespondingVocab(String)
+  DecodeError(Int32)
+}
+
+///|
+priv struct SpecialControlToken {
+  id : Int32
+  content : String
+  single_word : Bool
+  lstrip : Bool
+  rstrip : Bool
+  normalized : Bool
+  special : Bool
+} derive(FromJson)
+
+///|
+priv struct QwenTokenizerModel {
+  vocab : Map[String, Int32]
+  merges : Array[Array[String]]
+  model_type : String // JSON key "type" — renamed because `type` is a keyword
+}
+
+///|
+/// Manual decoder (instead of derive) so the JSON key "type" can map to the
+/// field `model_type`. Mirrors what derive(FromJson) generates.
+impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
+  guard json is Json::Object(obj) else {
+    raise @json.JsonDecodeError((path, "QwenTokenizerModel: expected object"))
+  }
+  let vocab : Map[String, Int32] = @utils.extract(obj, "vocab", path)
+  let merges : Array[Array[String]] = @utils.extract(obj, "merges", path)
+  let model_type : String = match obj.get("type") {
+    Some(t) => @json.from_json(t, path=path.add_key("type"))
+    None =>
+      raise @json.JsonDecodeError(
+        (path.add_key("type"), "missing \"type\" field"),
+      )
+  }
+
+  { vocab, merges, model_type, }
+}
+
+///|
+/// Rules for splitting text before BPE.
+/// Mirror of the "pre_tokenizer" section — an externally-tagged enum:
+/// the JSON "type" field picks the variant.
+priv enum PreTokenizer {
+  // The key is when match on Sequence, it matches on Array of itself which 
+  // then go further matching on Split and ByteLevel
+  Sequence(Array[PreTokenizer])
+  Split(pattern~ : String, behavior~ : String, invert~ : Bool)
+  ByteLevel(add_prefix_space~ : Bool, trim_offsets~ : Bool, use_regex~ : Bool)
+}
+
+///|
+/// Notice path grows as you descend during recurisve parse
+impl FromJson for PreTokenizer with fn from_json(json, path) {
+  guard json is Json::Object(obj) else {
+    raise @json.JsonDecodeError((path, "PreTokenizer: expected object"))
+  }
+  guard obj.get("type") is Some(Json::String(kind)) else {
+    raise @json.JsonDecodeError(
+      (path, "PreTokenizer: missing \"type\" discriminator"),
+    )
+  }
+  match kind {
+    "Sequence" => Sequence(@utils.extract(obj, "pretokenizers", path))
+    "Split" => {
+      // pattern is nested: {"Regex": "..."}
+      let pattern_map : Map[String, String] = @utils.extract(
+        obj, "pattern", path,
+      )
+      guard pattern_map.get("Regex") is Some(regex) else {
+        raise @json.JsonDecodeError(
+          (path.add_key("pattern"), "Split: expected {\"Regex\": ...}"),
+        )
+      }
+      Split(
+        pattern=regex,
+        behavior=@utils.extract(obj, "behavior", path),
+        invert=@utils.extract(obj, "invert", path),
+      )
+    }
+    "ByteLevel" =>
+      ByteLevel(
+        add_prefix_space=@utils.extract(obj, "add_prefix_space", path),
+        trim_offsets=@utils.extract(obj, "trim_offsets", path),
+        use_regex=@utils.extract(obj, "use_regex", path),
+      )
+    _ =>
+      raise @json.JsonDecodeError(
+        (path, "PreTokenizer: unknown type \"\{kind}\""),
+      )
+  }
+}
+
+///|
+/// saved at `~/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json`
+priv struct QwenTokenizerJsonFile {
+  added_tokens : Array[SpecialControlToken]
+  model : QwenTokenizerModel
+  pre_tokenizer : PreTokenizer
+} derive(FromJson)
+
+///|
+struct Tokenizer {
+  // Ordinary BPE tokens
+  vocab : Map[String, Int32]
+  // reverse lookup of vocab
+  ids : Map[Int32, String]
+  // Added tokens only: ID -> literal content.
+  added_ids : Map[Int32, String]
+  // reverse lookup for added_ids
+  added_vocabs : Map[String, Int32]
+  // 151,387 ordered BPE rules. (left symbol, right symbol) -> merge rank.
+  merges : Map[(String, String), Int32]
+  pre_tokenizer : PreTokenizer
+}
+
+///|
+priv enum TokenString {
+  Ordinay(String)
+  Added(String)
+}
+
+///|
+fn Tokenizer::split_string(self : Self, input : String) -> Array[String] {
+  guard self.pre_tokenizer is Sequence([Split(pattern~, behavior~, invert~), _]) else {
+    abort("expected a Sequence with Split as its first pre-tokenizer")
+  }
+  guard behavior == "Isolated" && !invert else {
+    abort("unsupported Split pre-tokenizer")
+  }
+  @utils.split_with_pre_tokenizer(input, pattern)
+}
+
+///|
+/// Use the known added_vocabs to first split the text into Array of TokenString.
+/// The purpose of it is to handle those special text pattern first, then for ordinary
+/// text use bpe to encode
+fn Tokenizer::split_text_into_token_string(
+  self : Self,
+  text : String,
+) -> Array[TokenString] {
+  let tokens = self.added_vocabs.keys().to_array()
+  tokens.sort_by_key(token => -token.length())
+  let regex : @string.Regex? = tokens.fold(init=None, (acc, token) => {
+    let literal = @string.Regex::string(token)
+    match acc {
+      None => Some(literal)
+      Some(current) => Some(current | literal)
+    }
+  })
+  let result : Array[TokenString] = []
+  guard regex is Some(regex) else {
+    if text.length() > 0 {
+      result.push(Ordinay(text))
+    }
+    return result
+  }
+  let mut remaining = text[:]
+  while true {
+    match regex.execute(remaining) {
+      None => {
+        if remaining.length() > 0 {
+          result.push(Ordinay(remaining.to_owned()))
+        }
+        break
+      }
+      Some(matched) => {
+        let ordinary = matched.before()
+        if ordinary.length() > 0 {
+          result.push(Ordinay(ordinary.to_owned()))
+        }
+        result.push(Added(matched.content().to_owned()))
+        remaining = matched.after()
+      }
+    }
+  }
+  result
+}
+
+///|
+/// Build a Tokenizer from the *contents* of tokenizer.json. Pure: no I/O.
+pub fn Tokenizer::new(
+  tokenizer_json : String,
+) -> Tokenizer raise TokenizerError {
+  let parsed = @json.parse(tokenizer_json) catch {
+    e => raise InvalidFormat(e.to_string())
+  }
+  let qwen_tokenizer_json_file : QwenTokenizerJsonFile = @json.from_json(parsed) catch {
+    e => raise InvalidFormat(e.to_string())
+  }
+
+  guard qwen_tokenizer_json_file.model.model_type == "BPE" else {
+    raise InvalidModel(
+      "expected BPE tokenzier, got \{qwen_tokenizer_json_file.model.model_type} }",
+    )
+  }
+
+  let vocab = qwen_tokenizer_json_file.model.vocab
+  let added_ids : Map[Int32, String] = Map([])
+  let added_vocabs : Map[String, Int32] = Map([])
+  // merge those special tokens
+  for each_special_token in qwen_tokenizer_json_file.added_tokens {
+    vocab.set(each_special_token.content, each_special_token.id)
+    added_vocabs.set(each_special_token.content, each_special_token.id)
+    added_ids.set(each_special_token.id, each_special_token.content)
+  }
+
+  // build revers one
+  let ids : Map[Int32, String] = Map([])
+  for token, id in vocab {
+    if ids.contains(id) {
+      raise InvalidFormat("duplicated id \{id} for token: \{token}")
+    }
+    ids[id] = token
+  }
+
+  let merges = qwen_tokenizer_json_file.model.merges |> parse_merges
+
+  {
+    vocab,
+    ids,
+    added_ids,
+    added_vocabs,
+    merges,
+    pre_tokenizer: qwen_tokenizer_json_file.pre_tokenizer,
+  }
+}
+
+///|
+/// Parse the "merges" array from tokenizer.json's model section into
+/// pair -> rank (rank = position in the array, lower merges first).
+/// In this file merges are JSON pairs: [["Ġ", "t"], ["i", "n"], ...].
+fn parse_merges(
+  merges : Array[Array[String]],
+) -> Map[(String, String), Int32] raise TokenizerError {
+  let merged : Map[(String, String), Int32] = Map([])
+
+  for (index, pair) in merges.iter2() {
+    let key = match pair {
+      [x, y] => (x, y)
+      _ =>
+        raise InvalidFormat(
+          "The merges in tokenizer.json should be two element arrays",
+        )
+    }
+    merged.set(key, index)
+  }
+  merged
+}
+
+///|
+/// Load tokenizer.json from disk, then parse.
+pub fn Tokenizer::load(path : String) -> Tokenizer raise TokenizerError {
+  let content = @fs.read_file_to_string(path) catch {
+    @fs.IOError(msg) =>
+      raise InvalidFormat("cannot read file \{path}, error: \{msg}")
+  }
+  Tokenizer::new(content)
+}
+
+///|
+/// Use byte pair encoding to convert text into an integer representation (token IDs) for LLM trainning
+/// Ref: https://sebastianraschka.com/blog/2025/bpe-from-scratch.html
+/// Q: Where is the vocabulary coming from? Do I need to build it manually first?
+/// A: We don't need to build the vocabulary, it is created/trained from Qwen model, the tokenizer.json file contains the vocabs.
+/// Q: what is the Tokenizer we created from qwen's tokenizer.json file? how it is related with our code.
+/// The tokenizer contains result of  the BPE algorithm worked on the text. Our code don't need to implement BPE, we just use the rules and vocabs to do encode and decode.
+/// Q: From the example: "the cat in the hat" in https://sebastianraschka.com/blog/2025/bpe-from-scratch.html#14-bpe-algorithm-example
+/// "the" appears twice, so we need to split the "the cat in the hat" as our first step. How this split happened? 
+/// Q: Do we use some help from the tokenizer.json or we do the split purely by our own?
+/// === Following are general steps:
+pub fn Tokenizer::encode(
+  self : Tokenizer,
+  text : String,
+) -> Array[Int32] raise TokenizerError {
+  let token_strings = self.split_text_into_token_string(text)
+
+  let token_ids : Array[Int32] = []
+
+  for segment in token_strings {
+    match segment {
+      Ordinay(s) =>
+        for chunk in self.split_string(s) {
+          let chunk_ids = self.encode_chunk(chunk)
+          for id in chunk_ids {
+            token_ids.push(id)
+          }
+        }
+      Added(control_string) => {
+        guard self.added_vocabs.get(control_string) is Some(id) else {
+          raise InvalidFormat("failed to get control string's id")
+        }
+        token_ids.push(id)
+      }
+    }
+  }
+  token_ids
+}
+
+///|
+/// chunk is a piece of human-readable text produced from pre-tokenization
+fn Tokenizer::encode_chunk(
+  self : Self,
+  chunk : String,
+) -> Array[Int32] raise TokenizerError {
+  let bytes = @encoding.encode(@encoding.UTF8, chunk)
+  let symbols = @utils.bytes_to_symbols(bytes)
+  let merged_symbols = bpe_merge(symbols, self.merges)
+  self.symbols_to_ids(merged_symbols)
+}
+
+///|
+/// Convert final BPE symbols into IDs using self.vocab.
+fn Tokenizer::symbols_to_ids(
+  self : Tokenizer,
+  symbols : Array[String],
+) -> Array[Int32] raise TokenizerError {
+  symbols.map(each => {
+    match self.vocab.get(each) {
+      Some(i) => i
+      None => raise NoCorrespondingVocab("\{each}")
+    }
+  })
+}
+
+///|
+/// Run ranked BPE on one pre-tokenized chunk.
+///
+/// `chars` starts with one byte-alphabet symbol per UTF-8 byte. These are
+/// strings, not token IDs. `merges` maps (left_symbol, right_symbol) to its
+/// rank. A lower rank means higher merge priority; the rank is not a token ID.
+///
+/// Example:
+///   current = ["a", "b", "c"]
+///   ranks   = {("a", "b") -> 5, ("b", "c") -> 1}
+/// Choose ("b", "c") because rank 1 is lower than rank 5:
+///   next    = ["a", "bc"]
+/// The rand info is stored in the merges which is the learned BPE rules loaded 
+/// from tokenizer.json
+/// 
+/// Implementation steps:
+/// 1. Set `current = chars`. If it has fewer than two symbols, return it.
+/// 2. Start a loop. Scan every adjacent pair in `current` from left to right.
+/// 3. Look up each pair in `merges` and remember the pair with the lowest rank.
+///    Do not count pair frequency and do not choose by token ID.
+/// 4. If no adjacent pair exists in `merges`, return `current`.
+/// 5. Concatenate the selected pair's two strings to form its merged symbol.
+/// 6. Build a new array from left to right. Replace every non-overlapping
+///    occurrence of the selected pair with that merged symbol, skipping two
+///    input symbols after each replacement. Otherwise, copy one symbol.
+/// 7. Make the new array `current` and repeat from step 2. Newly merged symbols
+///    can form new adjacent pairs, so ranks must be checked again.
+/// 8. Return the remaining symbols. Convert them to IDs only after this function.
+/// Merges stay within this chunk; never join symbols from another chunk.
+fn bpe_merge(
+  chars : Array[String],
+  merges : Map[(String, String), Int32],
+) -> Array[String] raise TokenizerError {
+  if chars.length() < 2 {
+    return chars
+  }
+  let mut chars = chars
+
+  while true {
+    let paired_chars = build_pairs(chars)
+    match find_lowest_rank_pair(paired_chars, merges) {
+      None => break
+      Some(pair_to_merge) => chars = rebuild_chars(pair_to_merge, chars)
+    }
+  }
+  chars
+}
+
+///|
+/// pair is the pair to be merged
+/// rebuild the chars by merge two if they next to each other in chars
+fn rebuild_chars(
+  pair : (String, String),
+  chars : Array[String],
+) -> Array[String] {
+  rebuild_chars_helper(pair, chars, [])
+}
+
+///|
+fn rebuild_chars_helper(
+  pair : (String, String),
+  rest : Array[String],
+  acc : Array[String],
+) -> Array[String] {
+  let (a, b) = pair
+  match rest {
+    [] => acc
+    [x] => acc + [x]
+    [x, y, .. rest] if x == a && y == b =>
+      rebuild_chars_helper(pair, rest.to_owned(), acc + [x + y])
+    [x, y, .. rest] =>
+      rebuild_chars_helper(pair, [y] + rest.to_owned(), acc + [x])
+  }
+}
+
+///|
+/// Find the adjacent pair with the lowest merge rank.
+///
+/// `paired_chars` contains the pairs currently available for merging. Not every
+/// pair necessarily has a rule in `merges`; those pairs are skipped. A lower
+/// rank means the rule appeared earlier in `tokenizer.json`'s `model.merges`
+/// array and therefore has higher priority.
+///
+/// The accumulator stores `Some((pair, rank))` for the best mergeable pair
+/// found so far, or `None` before any mergeable pair has been found. Returning
+/// `None` means no more merges apply and tells the caller to stop BPE.
+fn find_lowest_rank_pair(
+  paired_chars : Array[(String, String)],
+  merges : Map[(String, String), Int32],
+) -> (String, String)? {
+  let best : ((String, String), Int32)? = paired_chars.fold(init=None, (
+    acc,
+    current_pair,
+  ) => {
+    match (acc, merges.get(current_pair)) {
+      // This is the first pair for which we have found a merge rule.
+      (None, Some(rank)) => Some((current_pair, rank))
+      // Replace the previous best only when the current rule has a lower rank.
+      (Some((_, best_rank)), Some(rank)) if rank < best_rank =>
+        Some((current_pair, rank))
+      // Either this pair has no rule, or its rank is not better than the
+      // current best. In both cases, keep the accumulator unchanged.
+      _ => acc
+    }
+  })
+  match best {
+    None => None
+    Some((pair, _)) => Some(pair)
+  }
+}
+
+///|
+fn[T] build_pairs(chars : Array[T]) -> Array[(T, T)] {
+  build_pairs_helper([], chars)
+}
+
+///|
+fn[T] build_pairs_helper(acc : Array[(T, T)], rest : Array[T]) -> Array[(T, T)] {
+  match rest {
+    [] => acc
+    [_] => acc
+    [x, y] => build_pairs_helper(acc + [(x, y)], [])
+    [x, y, .. rest] => build_pairs_helper(acc + [(x, y)], [y] + rest.to_owned())
+  }
+}
+
+///|
+/// Token ids -> text. Raises UnknownToken for ids outside the vocab.
+///
+/// Decode reverses encode, but it is not only `ids[id]` followed by string
+/// concatenation. Ordinary IDs map to byte-alphabet token strings, which must
+/// be converted back to bytes before UTF-8 decoding.
+///
+/// Implementation steps:
+/// 1. Walk the input IDs in order. Keep decoded text in `decoded_output` and
+///    consecutive ordinary byte-alphabet token strings in `pending_symbols`.
+/// 2. Check `added_ids` first. If the ID is an added token, flush the pending
+///    ordinary symbols (steps 5-6), then append the added token's literal
+///    content directly. Added tokens must not enter byte-level decoding.
+/// 3. Otherwise, look up the ID in `self.ids`. Raise `UnknownToken(id)` when it
+///    is absent. The result is a byte-alphabet token string such as "Ġworld".
+/// 4. Push that token string onto `pending_symbols`. Do not UTF-8 decode each
+///    token independently: a multi-byte UTF-8 character can be split across
+///    adjacent BPE tokens.
+/// 5. When an added token or the end of input is reached, call
+///    `@utils.symbols_to_bytes` to reverse the fixed byte-alphabet mapping for
+///    all pending symbols, converting symbols such as "Ġ", "Ã", and "©" back
+///    to their original byte values.
+/// 6. UTF-8 decode the accumulated bytes and append the resulting text to the
+///    output builder. Convert malformed UTF-8 into `InvalidFormat`.
+/// 7. Return the accumulated output.
+///
+/// Useful pieces:
+/// - `self.added_ids`: ID -> literal added-token content.
+/// - `self.ids`: ID -> ordinary byte-alphabet token string.
+/// - `@utils.symbols_to_bytes`: byte-alphabet token strings -> original bytes.
+/// - `@encoding.decoder(@encoding.UTF8)`: UTF-8 bytes -> `String`.
+pub fn Tokenizer::decode(
+  self : Tokenizer,
+  ids : Array[Int32],
+) -> String raise TokenizerError {
+  // for final human-readable text, it will append 
+  // decoded ordinary text and literal added-token content
+  let decoded_output = StringBuilder()
+  // for temporarily stores consecutive ordinary token strings such as: ["hello", "Ġworld"]
+  let pending_symbols : Array[String] = []
+  let decoder = @encoding.decoder(@encoding.UTF8)
+  for id in ids {
+    match self.added_ids.get(id) {
+      Some(control_content) => {
+        let normal_string = decode_pending_symbols(decoder, pending_symbols)
+        decoded_output.write(normal_string)
+        decoded_output.write(control_content)
+
+        pending_symbols.clear()
+      }
+      None => {
+        guard self.ids.get(id) is Some(token_string) else {
+          raise UnknownToken(id)
+        }
+        pending_symbols.push(token_string)
+      }
+    }
+  }
+
+  // DO not forget the left pending symbols
+  let normal_string = decode_pending_symbols(decoder, pending_symbols)
+  decoded_output.write(normal_string)
+
+  decoded_output.to_string()
+}
+
+///|
+fn decode_pending_symbols(
+  decoder : @encoding.Decoder,
+  pending_symbols : Array[String],
+) -> String raise TokenizerError {
+  decoder.decode(@utils.symbols_to_bytes(pending_symbols)) catch {
+    _ => raise InvalidFormat("invalid UTF-8 in ordinary token sequence")
+  }
+}

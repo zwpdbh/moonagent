@@ -1,6 +1,8 @@
 import {
+  "moonbitlang/async",
   "moonbitlang/core/argparse",
   "zw/playground",
+  "zw/utils",
 }
 
 pkgtype(kind: "executable")

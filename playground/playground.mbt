@@ -20,4 +20,3 @@ fn shout(s : String) -> String {
 test "shout uppercases" {
   assert_eq(shout("moon"), "MOON")
 }
-

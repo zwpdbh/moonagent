@@ -1,0 +1,37 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "zw/utils"
+
+import {
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn bytes_to_symbols(Bytes) -> Array[String]
+
+pub async fn download_file(String, String, backup_url? : String) -> String
+
+pub fn expect_key(Map[String, Json], String, what~ : String, path~ : @json.JsonPath) -> Json raise @json.JsonDecodeError
+
+pub fn expect_object(Json, what~ : String, path~ : @json.JsonPath) -> Map[String, Json] raise @json.JsonDecodeError
+
+pub fn[T : @json.FromJson] extract(Map[String, Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
+
+pub fn qwen3_model_dir() -> String
+
+pub fn split_with_pre_tokenizer(String, String) -> Array[String]
+
+pub fn symbols_to_bytes(Array[String]) -> Bytes
+
+// Errors
+pub(all) suberror DownloadError {
+  BadStatus(Int32, String)
+  TooManyRedirects(String)
+  DownloadFailed(String)
+  BadRedirect(String)
+}
+
+// Types and methods
+
+// Type aliases
+
+// Traits

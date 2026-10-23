@@ -1,0 +1,9 @@
+import {
+  "moonbitlang/async/http",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/stdio",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/core/json",
+  "moonbitlang/regexp",
+}
