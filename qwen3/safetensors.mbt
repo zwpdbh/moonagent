@@ -35,12 +35,14 @@
 /// 5. Validate that tensor shapes match the configuration.
 /// 
 ///
+/// Q: why not just save Float32 but instead of save two BF16?
 
 ///|
 pub(all) suberror SafeTensorsError {
   InvalidFormat(String)
   UnknowTensor(String)
   UnsupportedDtype(String)
+  DtypeNotMatch(String)
 } derive(Debug)
 
 ///|
@@ -62,10 +64,35 @@ priv struct TensorHeaderEntry {
 } derive(FromJson)
 
 ///|
+/// Mirrors the JSON file exactly
+/// The start and end are relative postion to data_start_at (8 + header length)
 priv struct TensorOffsets {
   start : Int32
   end : Int32
 } derive(Eq, Debug)
+
+///|
+struct SafeTensorsHeader {
+  entries : Map[String, TensorHeaderEntry]
+  // each TensorHeaderEntry's data_offsets is relative to data_start_at
+  data_start_at : Int32
+}
+
+///|
+fn TensorHeaderEntry::to_tensor_info(
+  entry : Self,
+  data_start_at~ : Int32,
+) -> TensorInfo raise SafeTensorsError {
+  let begin = data_start_at + entry.data_offsets.start
+  let end = data_start_at + entry.data_offsets.end
+
+  TensorInfo::{
+    dtype: entry.dtype,
+    shape: entry.shape,
+    data_begin: begin,
+    data_end: end,
+  }
+}
 
 ///|
 /// Parse a two-element safetensors `data_offsets` array.
@@ -91,42 +118,100 @@ priv struct TensorInfo {
 }
 
 ///|
-struct SafeTensorsHeader {
-  entries : Map[String, TensorHeaderEntry]
-  // each TensorHeaderEntry's data_offsets is relative to data_start_at
-  data_start_at : Int32
-}
-
-///|
+/// A SafeTensors could read tensor data lazily.
+/// `path` is where to find the file when tensor bytes are needed.
+/// `tensors` are metadata of tensors.
 struct SafeTensors {
   tensors : Map[String, TensorInfo]
   path : String
 }
 
 ///|
-pub fn SafeTensors::load(path : String) -> SafeTensors raise SafeTensorsError {
-  abort("TODO")
+/// Laze load SafeTensors by loading its header information only
+pub async fn SafeTensors::load(
+  path : String,
+) -> SafeTensors raise SafeTensorsError {
+  let safetensors_header = read_safetensors_header(path)
+  let tensors : Map[String, TensorInfo] = safetensors_header.entries
+    .iter()
+    .fold(init=Map([]), (acc, each) => {
+      guard each is (k, v)
+      acc.set(
+        k,
+        v.to_tensor_info(data_start_at=safetensors_header.data_start_at),
+      )
+      acc
+    })
+  SafeTensors::{ tensors, path, }
 }
 
 ///|
+/// Get all the tensors' name
 pub fn SafeTensors::tensor_names(self : SafeTensors) -> Array[String] {
-  abort("TODO")
+  self.tensors.keys().fold(init=[], (acc, each) => acc + [each])
 }
 
 ///|
-pub fn SafeTensors::tensor_f32(
+/// Read one tensor lazily and return its values as F32 together with its shape.
+///
+/// Implementation steps:
+/// 1. Look up `name` in `self.tensors`. Raise `UnknowTensor(name)` when absent.
+/// 2. Require the tensor dtype to be BF16. Raise `UnsupportedDtype` for any
+///    other dtype unless a converter for that dtype has been implemented.
+/// 3. Validate that the byte range length equals `shape.product() * 2`, because
+///    each BF16 value uses two bytes.
+/// 4. Read only `data_begin..data_end` from `self.path`; do not read the whole
+///    safetensors file.
+/// 5. Convert each two-byte little-endian BF16 value to F32 by shifting its
+///    bits left by 16 and reinterpreting the resulting 32 bits as `Float`.
+/// 6. Return `(values, shape)`.
+///
+/// Because `SafeTensors` stores a path and reads lazily, the byte-reading helper
+/// will need to use the async file API, so this function will likely need an
+/// `async` signature when implemented.
+pub async fn SafeTensors::tensor_f32(
   self : SafeTensors,
   name : String,
 ) -> (Array[Float], Array[Int32]) raise SafeTensorsError {
+  let bytes = self.tensor_bytes(name)
+
   abort("TODO")
 }
 
 ///|
-fn SafeTensors::tensor_bytes(
+async fn read_file_range(
+  path : String,
+  begin : Int32,
+  end : Int32,
+) -> Bytes raise SafeTensorsError {
+  guard end >= begin else { raise InvalidFormat("invalid byte range") }
+  let file = @async_fs.open(path, mode=@async_fs.Mode::ReadOnly) catch {
+    _ => raise InvalidFormat("cannot open safetensors file: \{path}")
+  }
+  defer file.close()
+
+  file.read_exactly_at(end - begin, position=begin.to_int64()) catch {
+    _ =>
+      raise InvalidFormat(
+        "failed to read tensor bytes, start: \{begin}, end: \{end}",
+      )
+  }
+}
+
+///|
+async fn SafeTensors::tensor_bytes(
   self : SafeTensors,
   name : String,
 ) -> BytesView raise SafeTensorsError {
-  abort("TODO")
+  guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
+  guard tensor.dtype is BF16
+  let bytes = read_file_range(self.path, tensor.data_begin, tensor.data_end)
+  if bytes.length() != tensor.shape[0] * tensor.shape[1] * 2 {
+    raise InvalidFormat(
+      "bytes read for tensor: \{name} is not matched with tensor shape: \{repr(tensor.shape)}",
+    )
+  }
+  bytes
 }
 
 ///|
@@ -148,7 +233,7 @@ async fn read_safetensors_header(
     _ => raise InvalidFormat("cannot read safetensors header bytes")
   }
 
-  let entries = header_bytes |> parse_tensor_header_entries()
+  let entries = header_bytes |> parse_safetensors_header_entries()
   SafeTensorsHeader::{ entries, data_start_at: 8 + header_size.to_int(), }
 }
 
@@ -159,7 +244,7 @@ async fn read_safetensors_header(
 /// Ignore the name which is "__metadata__"
 /// 4. added name, and value which is TensorHeaderEntry into Map
 /// 5. return final result 
-fn parse_tensor_header_entries(
+fn parse_safetensors_header_entries(
   header_bytes : Bytes,
 ) -> Map[String, TensorHeaderEntry] raise SafeTensorsError {
   // decode bytes into UTF8 string
