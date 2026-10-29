@@ -63,3 +63,16 @@ fn apply_rope(
 ) -> Array[Float] {
   abort("TODO")
 }
+
+// After RoPE, the remaining attention work is:
+
+// 1. apply Q/K/V projections for each decoder layer;
+// 2. apply Qwen3’s query/key normalization;
+// 3. split vectors into attention heads;
+// 4. apply RoPE to queries and keys;
+// 5. store keys and values in the KV cache;
+// 6. run your scaled dot-product attention for each head;
+// 7. implement grouped-query attention;
+// 8. concatenate head outputs and apply the output projection.
+
+// So the immediate task is a **single-head `apply_rope`**, tested independently before integrating it into multi-head attention.
