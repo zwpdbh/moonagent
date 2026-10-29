@@ -334,3 +334,15 @@ test "TensorOffsets rejects non-array and wrong-length inputs" {
     assert_true(raised)
   }
 }
+
+///|
+test "rms_norm normalizes input and applies learned weights" {
+  let result = rms_norm([3.0, 4.0], [1.0, 0.5], 0.0)
+  assert_true((result[0] - 0.84852814).abs() < 0.000001)
+  assert_true((result[1] - 0.56568542).abs() < 0.000001)
+}
+
+///|
+test "rms_norm handles zero input with epsilon" {
+  assert_eq(rms_norm([0.0, 0.0], [1.0, 2.0], 0.000001), [0.0, 0.0])
+}

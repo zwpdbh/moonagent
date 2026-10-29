@@ -173,9 +173,31 @@ pub async fn SafeTensors::tensor_f32(
   self : SafeTensors,
   name : String,
 ) -> (Array[Float], Array[Int32]) raise SafeTensorsError {
-  let bytes = self.tensor_bytes(name)
+  guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
 
-  abort("TODO")
+  let bytes = self.tensor_bytes(name)
+  let values = bf16_bytes_to_f32(bytes)
+
+  (values, tensor.shape)
+}
+
+///|
+fn bf16_bytes_to_f32(bytes : BytesView) -> Array[Float] raise SafeTensorsError {
+  let values : Array[Float] = []
+  for remaining = bytes {
+    match remaining {
+      [] => break
+      [u16le(bits), .. rest] => {
+        // bits: UInt16, already decoded from two little-endian bytes.
+        let float_bits : UInt32 = bits << 16
+        let value = Float::reinterpret_from_uint(float_bits)
+        values.push(value)
+        continue rest
+      }
+      _ => raise InvalidFormat("incomplete BF16 value: expected two bytes")
+    }
+  }
+  values
 }
 
 ///|
@@ -206,7 +228,12 @@ async fn SafeTensors::tensor_bytes(
   guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
   guard tensor.dtype is BF16
   let bytes = read_file_range(self.path, tensor.data_begin, tensor.data_end)
-  if bytes.length() != tensor.shape[0] * tensor.shape[1] * 2 {
+
+  let element_count = tensor.shape.fold(init=1, (count, dimension) => {
+    count * dimension
+  })
+
+  if bytes.length() != element_count * 2 {
     raise InvalidFormat(
       "bytes read for tensor: \{name} is not matched with tensor shape: \{repr(tensor.shape)}",
     )
