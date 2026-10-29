@@ -1,4 +1,5 @@
 ///|
+/// Calculate attention from query and key vectors
 /// query:           [head_dim]
 /// keys:            [sequence_length, head_dim], flattened
 /// values:          [sequence_length, head_dim], flattened
@@ -44,4 +45,21 @@ fn scaled_dot_product_attention(
   @tensor.vec_mat_mul(vector=attention_weights, matrix=values, shape=[
     sequence_length, head_dim,
   ])
+}
+
+///|
+/// RoPE (Rotary Positional Encoding).
+/// It is applied to 
+/// - the query vector,
+/// - each key vector before storing it in the KV cache
+/// 
+/// `input` is one head’s query or key vector of length head_dim
+/// `position` is the token's absolute position in the sequence
+/// `rope_theta` comes from `Config.rope_theta`— Qwen3 uses 1000000
+fn apply_rope(
+  input : ArrayView[Float],
+  position : Int32,
+  rope_theta : Float,
+) -> Array[Float] {
+  abort("TODO")
 }
