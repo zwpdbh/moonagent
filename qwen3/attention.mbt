@@ -10,11 +10,11 @@
 /// Variance is exploding due to high dimension. and Variance Scaling Rule
 /// tell us the when you multiple a variable by C, its variance is C squared.
 fn scaled_dot_product_attention(
-  query : ArrayView[Float],
-  keys : ArrayView[Float],
-  values : ArrayView[Float],
-  sequence_length : Int32,
-  head_dim : Int32,
+  query~ : ArrayView[Float],
+  keys~ : ArrayView[Float],
+  values~ : ArrayView[Float],
+  sequence_length~ : Int32,
+  head_dim~ : Int32,
 ) -> Array[Float] {
   if sequence_length <= 0 {
     abort("attention sequence length must be positive")
