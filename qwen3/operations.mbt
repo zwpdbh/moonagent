@@ -137,3 +137,25 @@ fn mlp(
   elementwise_mul(gated_projection_silu, up_projection)
   |> linear(down_weight, down_shape)
 }
+
+///|
+/// The differences between Softmax and other operations
+/// Softmax:           nonlinear normalization into weights summing to 1
+/// Linear projection: learned transformation
+/// SiLU:              nonlinear activation in the MLP
+fn softmax(input : ArrayView[Float]) -> Array[Float] {
+  if input.length() == 0 {
+    abort("softmax input must not be empty")
+  }
+
+  let maximum = input.fold(init=input[0], (current_max, value) => {
+    if value > current_max {
+      value
+    } else {
+      current_max
+    }
+  })
+  let exponentials = input.map(value => @math.expf(value - maximum))
+  let sum = exponentials.fold(init=0.0F, (acc, value) => acc + value)
+  exponentials.map(value => value / sum)
+}

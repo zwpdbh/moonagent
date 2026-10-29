@@ -358,3 +358,22 @@ test "linear returns one value per output row" {
   let result = linear([2.0, -1.0], [1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [3, 2])
   assert_eq(result, [2.0, -1.0, 1.0])
 }
+
+///|
+test "softmax converts equal scores to equal weights" {
+  assert_eq(softmax([0.0, 0.0]), [0.5, 0.5])
+}
+
+///|
+test "softmax produces normalized weights for large scores" {
+  let result = softmax([10000.0, 10001.0])
+  assert_true((result[0] - 0.26894143).abs() < 0.000001)
+  assert_true((result[1] - 0.7310586).abs() < 0.000001)
+  let sum = result.fold(init=0.0F, (acc, value) => acc + value)
+  assert_true((sum - 1.0).abs() < 0.000001)
+}
+
+///|
+test "panic softmax rejects empty input" {
+  ignore(softmax([]))
+}
