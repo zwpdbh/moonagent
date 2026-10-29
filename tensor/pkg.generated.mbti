@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "zw/tensor"
+
+// Values
+pub fn dot(left~ : ArrayView[Float], right~ : ArrayView[Float]) -> Float
+
+pub fn mat_vec_mul(matrix~ : ArrayView[Float], shape~ : Array[Int32], vector~ : ArrayView[Float]) -> Array[Float]
+
+pub fn vec_mat_mul(vector~ : ArrayView[Float], matrix~ : ArrayView[Float], shape~ : Array[Int32]) -> Array[Float]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -377,3 +377,38 @@ test "softmax produces normalized weights for large scores" {
 test "panic softmax rejects empty input" {
   ignore(softmax([]))
 }
+
+///|
+test "attention with one position returns that position's value" {
+  let result = scaled_dot_product_attention(
+    [1.0, 0.0],
+    [2.0, 3.0],
+    [4.0, 5.0],
+    1,
+    2,
+  )
+  assert_eq(result, [4.0, 5.0])
+}
+
+///|
+test "attention with equal scores averages value vectors" {
+  let result = scaled_dot_product_attention(
+    [0.0, 0.0],
+    [1.0, 2.0, 3.0, 4.0],
+    [1.0, 2.0, 3.0, 4.0],
+    2,
+    2,
+  )
+  assert_eq(result, [2.0, 3.0])
+}
+
+///|
+test "attention applies non-uniform weights to values" {
+  let result = scaled_dot_product_attention([1.0], [0.0, 1.0], [2.0, 4.0], 2, 1)
+  assert_true((result[0] - 3.4621172).abs() < 0.000001)
+}
+
+///|
+test "panic attention rejects inconsistent cache lengths" {
+  ignore(scaled_dot_product_attention([1.0], [1.0], [1.0, 2.0], 1, 1))
+}

@@ -11,4 +11,5 @@ import {
   "moonbitlang/async/fs" @async_fs,
   "moonbitlang/core/math",
   "zw/utils",
+  "zw/tensor",
 }

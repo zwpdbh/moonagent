@@ -71,20 +71,7 @@ fn linear(
   weight : ArrayView[Float],
   shape : Array[Int32],
 ) -> Array[Float] {
-  let out_features = shape[0]
-  let in_features = shape[1]
-
-  if input.length() != in_features {
-    abort(
-      "matrix multiplication rank not correct, expect: \{in_features}, got: \{input.length()}",
-    )
-  }
-
-  Array::makei(out_features, out_index => {
-    let row_start = out_index * in_features
-    let row = weight[row_start:row_start + in_features]
-    row.foldi(init=0.0F, (in_index, sum, value) => sum + value * input[in_index])
-  })
+  @tensor.mat_vec_mul(matrix=weight, shape~, vector=input)
 }
 
 ///|
