@@ -86,3 +86,54 @@ fn linear(
     row.foldi(init=0.0F, (in_index, sum, value) => sum + value * input[in_index])
   })
 }
+
+///|
+/// SiLU activation (Sigmoid Linear Unit)
+/// It is used in every MLP block
+fn silu(input : ArrayView[Float]) -> Array[Float] {
+  input.map(value => value / (1.0F + @math.expf(-value)))
+}
+
+///|
+/// Element-wise multiplication
+fn elementwise_mul(
+  left : ArrayView[Float],
+  right : ArrayView[Float],
+) -> Array[Float] {
+  if left.length() != right.length() {
+    abort("the element wise multiplication need same length on both input")
+  }
+  left.mapi((index, v) => v * right[index])
+}
+
+///|
+/// MLP operation -- feed-forward network operation
+/// input:       [hidden_size]
+/// gate_proj:   [intermediate_size, hidden_size]
+/// up_proj:     [intermediate_size, hidden_size]
+/// down_proj:   [hidden_size, intermediate_size]
+/// output:      [hidden_size]
+/// Its job is to transform each token's hidden vector into a richer representation 
+/// using learned weights and nonlinear activation.
+/// Q: tranditional MLP vs gated MLP, often called SwiGLU
+/// MLP:
+/// input → linear projection → activation → linear projection → output
+/// vs
+/// gated MLP:
+///                  ┌→ gate projection → SiLU ───────-┐
+/// input vector ────┤                                 ├→ element-wise multiply → down projection
+///                  └→ up projection ─────────────────┘
+fn mlp(
+  input : ArrayView[Float],
+  gate_weight : ArrayView[Float],
+  gate_shape : Array[Int32],
+  up_weight : ArrayView[Float],
+  up_shape : Array[Int32],
+  down_weight : ArrayView[Float],
+  down_shape : Array[Int32],
+) -> Array[Float] {
+  let gated_projection_silu = linear(input, gate_weight, gate_shape) |> silu
+  let up_projection = linear(input, up_weight, up_shape)
+  elementwise_mul(gated_projection_silu, up_projection)
+  |> linear(down_weight, down_shape)
+}
