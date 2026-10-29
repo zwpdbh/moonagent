@@ -346,3 +346,15 @@ test "rms_norm normalizes input and applies learned weights" {
 test "rms_norm handles zero input with epsilon" {
   assert_eq(rms_norm([0.0, 0.0], [1.0, 2.0], 0.000001), [0.0, 0.0])
 }
+
+///|
+test "linear computes vector-matrix dot products" {
+  let result = linear([1.0, 2.0, 3.0], [1.0, 0.0, 0.0, 0.0, 1.0, 1.0], [2, 3])
+  assert_eq(result, [1.0, 5.0])
+}
+
+///|
+test "linear returns one value per output row" {
+  let result = linear([2.0, -1.0], [1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [3, 2])
+  assert_eq(result, [2.0, -1.0, 1.0])
+}

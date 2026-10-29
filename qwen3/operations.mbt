@@ -57,3 +57,32 @@ fn rms_norm(
 
   input.mapi((i, value) => value * inverse_rms * weight[i])
 }
+
+///|
+/// Multiplying an input vector by a learned weight matrix.
+/// shape  = [out_features, in_features]
+/// input  = in_features values
+/// weight = out_features × in_features values, flattened
+/// output = out_features values 
+/// Weight:  m × n matrix, Input:   n × 1 vector, Output:  m × 1 vector
+/// Each output value is the dot product of one weight-matrix row with the input:
+fn linear(
+  input : ArrayView[Float],
+  weight : ArrayView[Float],
+  shape : Array[Int32],
+) -> Array[Float] {
+  let out_features = shape[0]
+  let in_features = shape[1]
+
+  if input.length() != in_features {
+    abort(
+      "matrix multiplication rank not correct, expect: \{in_features}, got: \{input.length()}",
+    )
+  }
+
+  Array::makei(out_features, out_index => {
+    let row_start = out_index * in_features
+    let row = weight[row_start:row_start + in_features]
+    row.foldi(init=0.0F, (in_index, sum, value) => sum + value * input[in_index])
+  })
+}
