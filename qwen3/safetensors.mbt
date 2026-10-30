@@ -110,6 +110,12 @@ impl FromJson for TensorOffsets with fn from_json(json, path) {
 ///|
 /// Normalize runtime metadata for one tensor
 /// Store absolute file offsets, not the header's relative offsets
+/// Different from Tensor, it describes where a tensor is stored.
+/// It contains:
+/// - the on-disk data type;
+/// - the shape from the safetensors header;
+/// - absolute file offsets for lazy reading.
+/// vs Tensor: contains values available for computation:
 priv struct TensorInfo {
   dtype : DType
   shape : Array[Int32]
