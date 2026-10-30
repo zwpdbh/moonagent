@@ -1,4 +1,91 @@
 ///|
+/// An owned, contiguous row-major tensor.
+pub struct Tensor {
+  data : Array[Float]
+  shape : Array[Int32]
+}
+
+///|
+/// A borrowed view of a contiguous row-major tensor.
+pub struct TensorView {
+  data : ArrayView[Float]
+  shape : Array[Int32]
+}
+
+///|
+fn checked_shape_size(shape : Array[Int32]) -> Int32 {
+  let mut size = 1
+  for dimension in shape {
+    if dimension < 0 {
+      abort("tensor dimensions must not be negative")
+    }
+    size *= dimension
+  }
+  size
+}
+
+///|
+/// Construct an owned tensor after validating its data length and shape.
+pub fn Tensor::new(data~ : Array[Float], shape~ : Array[Int32]) -> Tensor {
+  if data.length() != checked_shape_size(shape) {
+    abort("tensor data length does not match its shape")
+  }
+  { data, shape, }
+}
+
+///|
+/// Construct a borrowed tensor view after validating its data length and shape.
+pub fn TensorView::new(
+  data~ : ArrayView[Float],
+  shape~ : Array[Int32],
+) -> TensorView {
+  if data.length() != checked_shape_size(shape) {
+    abort("tensor view data length does not match its shape")
+  }
+  { data, shape, }
+}
+
+///|
+/// Borrow this owned tensor without copying its values.
+pub fn Tensor::view(self : Tensor) -> TensorView {
+  { data: self.data[:], shape: self.shape, }
+}
+
+///|
+/// Return the number of dimensions.
+pub fn TensorView::rank(self : TensorView) -> Int32 {
+  self.shape.length()
+}
+
+///|
+/// Return the size of one dimension.
+pub fn TensorView::dim(self : TensorView, axis : Int32) -> Int32 {
+  if axis < 0 || axis >= self.rank() {
+    abort("tensor axis is out of bounds")
+  }
+  self.shape[axis]
+}
+
+///|
+/// Slice one index from the first axis without copying data.
+/// The returned rank is one less than the input rank.
+pub fn TensorView::slice_first_axis(
+  self : TensorView,
+  index : Int32,
+) -> TensorView {
+  if self.rank() == 0 {
+    abort("cannot slice the first axis of a scalar tensor")
+  }
+  if index < 0 || index >= self.shape[0] {
+    abort("tensor slice index is out of bounds")
+  }
+  let shape = self.shape[1:].to_owned()
+  let block_size = checked_shape_size(shape)
+  let start = index * block_size
+  { data: self.data[start:start + block_size], shape, }
+}
+
+///|
 /// Compute the dot product of two equal-length vectors.
 ///
 /// Mathematically, this calculates `sum(left[i] * right[i])` and returns one
@@ -13,77 +100,123 @@ pub fn dot(left~ : ArrayView[Float], right~ : ArrayView[Float]) -> Float {
 }
 
 ///|
-/// Validate matrix metadata and return `(rows, columns)`.
-///
-/// A matrix is stored as one flat row-major array: all columns of row 0 first,
-/// then all columns of row 1, and so on. `shape` supplies the two-dimensional
-/// interpretation that the flat `ArrayView[Float]` cannot carry by itself.
-fn matrix_dimensions(
-  matrix : ArrayView[Float],
-  shape : Array[Int32],
-) -> (Int32, Int32) {
-  if shape.length() != 2 {
-    abort("matrix shape must contain exactly two dimensions")
+/// Validate that a tensor is a matrix and return `(rows, columns)`.
+fn matrix_dimensions(matrix : TensorView) -> (Int32, Int32) {
+  if matrix.rank() != 2 {
+    abort("expected a rank-2 matrix")
   }
-  let rows = shape[0]
-  let columns = shape[1]
-  if rows < 0 || columns < 0 {
-    abort("matrix dimensions must not be negative")
-  }
-  if matrix.length() != rows * columns {
-    abort("matrix data length does not match its shape")
-  }
-  (rows, columns)
+  (matrix.shape[0], matrix.shape[1])
 }
 
 ///|
 /// Multiply a matrix by a column vector: `matrix[rows, columns] * vector[columns]`.
 ///
-/// The result contains `rows` values. Each output value is the dot product of
-/// one matrix row with `vector`:
-/// `output[row] = dot(matrix[row, :], vector)`.
-///
-/// `matrix` uses flat row-major storage and `shape` must be `[rows, columns]`.
-/// The labeled arguments distinguish the matrix from the vector even though
-/// both have type `ArrayView[Float]`.
-pub fn mat_vec_mul(
-  matrix~ : ArrayView[Float],
-  shape~ : Array[Int32],
-  vector~ : ArrayView[Float],
-) -> Array[Float] {
-  let (rows, columns) = matrix_dimensions(matrix, shape)
-  if vector.length() != columns {
+/// The result is an owned rank-1 tensor with shape `[rows]`. Each output value
+/// is the dot product of one matrix row with `vector`.
+pub fn mat_vec_mul(matrix~ : TensorView, vector~ : TensorView) -> Tensor {
+  let (rows, columns) = matrix_dimensions(matrix)
+  if vector.rank() != 1 || vector.shape[0] != columns {
     abort("matrix columns must equal the vector length")
   }
-  Array::makei(rows, row_index => {
+  let data = Array::makei(rows, row_index => {
     let row_start = row_index * columns
-    let row = matrix[row_start:row_start + columns]
-    dot(left=row, right=vector)
+    let row = matrix.data[row_start:row_start + columns]
+    dot(left=row, right=vector.data)
   })
+  Tensor::new(data~, shape=[rows])
 }
 
 ///|
 /// Multiply a row vector by a matrix: `vector[rows] * matrix[rows, columns]`.
 ///
-/// The result contains `columns` values. Each output value combines one matrix
-/// column with the vector:
-/// `output[column] = sum(vector[row] * matrix[row, column])` over every row.
-///
-/// This is the orientation used for `attention_weights * values` in attention.
-/// `matrix` uses flat row-major storage and `shape` must be `[rows, columns]`.
-/// Labeled arguments make the multiplication direction clear at the call site.
-pub fn vec_mat_mul(
-  vector~ : ArrayView[Float],
-  matrix~ : ArrayView[Float],
-  shape~ : Array[Int32],
-) -> Array[Float] {
-  let (rows, columns) = matrix_dimensions(matrix, shape)
-  if vector.length() != rows {
+/// The result is an owned rank-1 tensor with shape `[columns]`. Each output
+/// value combines one matrix column with the vector.
+pub fn vec_mat_mul(vector~ : TensorView, matrix~ : TensorView) -> Tensor {
+  let (rows, columns) = matrix_dimensions(matrix)
+  if vector.rank() != 1 || vector.shape[0] != rows {
     abort("vector length must equal the matrix rows")
   }
-  Array::makei(columns, column => {
-    vector.foldi(init=0.0F, (row, sum, value) => {
-      sum + value * matrix[row * columns + column]
+  let data = Array::makei(columns, column => {
+    vector.data.foldi(init=0.0F, (row, sum, value) => {
+      sum + value * matrix.data[row * columns + column]
     })
   })
+  Tensor::new(data~, shape=[columns])
 }
+
+///|
+/// Combine two tensors with equal shapes element by element.
+fn zip_with(
+  left : TensorView,
+  right : TensorView,
+  operation : (Float, Float) -> Float,
+) -> Tensor {
+  if left.shape != right.shape {
+    abort("element-wise operations require equal tensor shapes")
+  }
+  let data = left.data.mapi((index, value) => {
+    operation(value, right.data[index])
+  })
+  Tensor::new(data~, shape=left.shape)
+}
+
+///|
+/// Add corresponding elements without broadcasting.
+pub fn elementwise_add(left~ : TensorView, right~ : TensorView) -> Tensor {
+  zip_with(left, right, (a, b) => a + b)
+}
+
+///|
+/// Subtract corresponding elements without broadcasting.
+pub fn elementwise_sub(left~ : TensorView, right~ : TensorView) -> Tensor {
+  zip_with(left, right, (a, b) => a - b)
+}
+
+///|
+/// Multiply corresponding elements without broadcasting.
+/// This is not matrix multiplication.
+pub fn elementwise_mul(left~ : TensorView, right~ : TensorView) -> Tensor {
+  zip_with(left, right, (a, b) => a * b)
+}
+
+///|
+/// Divide corresponding elements without broadcasting.
+pub fn elementwise_div(left~ : TensorView, right~ : TensorView) -> Tensor {
+  zip_with(left, right, (a, b) => a / b)
+}
+
+///|
+/// `+` is element-wise addition for owned tensors.
+pub impl Add for Tensor with fn add(self, other) {
+  elementwise_add(left=self.view(), right=other.view())
+}
+
+///|
+/// `-` is element-wise subtraction for owned tensors.
+pub impl Sub for Tensor with fn sub(self, other) {
+  elementwise_sub(left=self.view(), right=other.view())
+}
+
+///|
+/// `*` is element-wise multiplication, not matrix multiplication.
+pub impl Mul for Tensor with fn mul(self, other) {
+  elementwise_mul(left=self.view(), right=other.view())
+}
+
+///|
+/// `/` is element-wise division for owned tensors.
+pub impl Div for Tensor with fn div(self, other) {
+  elementwise_div(left=self.view(), right=other.view())
+}
+
+///|
+pub extend Tensor with Add::{add}
+
+///|
+pub extend Tensor with Sub::{sub}
+
+///|
+pub extend Tensor with Mul::{mul}
+
+///|
+pub extend Tensor with Div::{div}

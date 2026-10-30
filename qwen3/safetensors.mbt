@@ -152,33 +152,20 @@ pub fn SafeTensors::tensor_names(self : SafeTensors) -> Array[String] {
 }
 
 ///|
-/// Read one tensor lazily and return its values as F32 together with its shape.
+/// Read one tensor lazily and return an owned F32 tensor with validated shape.
 ///
-/// Implementation steps:
-/// 1. Look up `name` in `self.tensors`. Raise `UnknowTensor(name)` when absent.
-/// 2. Require the tensor dtype to be BF16. Raise `UnsupportedDtype` for any
-///    other dtype unless a converter for that dtype has been implemented.
-/// 3. Validate that the byte range length equals `shape.product() * 2`, because
-///    each BF16 value uses two bytes.
-/// 4. Read only `data_begin..data_end` from `self.path`; do not read the whole
-///    safetensors file.
-/// 5. Convert each two-byte little-endian BF16 value to F32 by shifting its
-///    bits left by 16 and reinterpreting the resulting 32 bits as `Float`.
-/// 6. Return `(values, shape)`.
-///
-/// Because `SafeTensors` stores a path and reads lazily, the byte-reading helper
-/// will need to use the async file API, so this function will likely need an
-/// `async` signature when implemented.
+/// Only the tensor's byte range is read from disk. BF16 values are converted to
+/// F32 by shifting their bits left by 16 and reinterpreting the result as `Float`.
 pub async fn SafeTensors::tensor_f32(
   self : SafeTensors,
   name : String,
-) -> (Array[Float], Array[Int32]) raise SafeTensorsError {
+) -> @tensor.Tensor raise SafeTensorsError {
   guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
 
   let bytes = self.tensor_bytes(name)
   let values = bf16_bytes_to_f32(bytes)
 
-  (values, tensor.shape)
+  @tensor.Tensor::new(data=values, shape=tensor.shape)
 }
 
 ///|

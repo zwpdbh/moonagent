@@ -4,13 +4,44 @@ package "zw/tensor"
 // Values
 pub fn dot(left~ : ArrayView[Float], right~ : ArrayView[Float]) -> Float
 
-pub fn mat_vec_mul(matrix~ : ArrayView[Float], shape~ : Array[Int32], vector~ : ArrayView[Float]) -> Array[Float]
+pub fn elementwise_add(left~ : TensorView, right~ : TensorView) -> Tensor
 
-pub fn vec_mat_mul(vector~ : ArrayView[Float], matrix~ : ArrayView[Float], shape~ : Array[Int32]) -> Array[Float]
+pub fn elementwise_div(left~ : TensorView, right~ : TensorView) -> Tensor
+
+pub fn elementwise_mul(left~ : TensorView, right~ : TensorView) -> Tensor
+
+pub fn elementwise_sub(left~ : TensorView, right~ : TensorView) -> Tensor
+
+pub fn mat_vec_mul(matrix~ : TensorView, vector~ : TensorView) -> Tensor
+
+pub fn vec_mat_mul(vector~ : TensorView, matrix~ : TensorView) -> Tensor
 
 // Errors
 
 // Types and methods
+pub struct Tensor {
+  data : Array[Float]
+  shape : Array[Int32]
+}
+pub fn Tensor::add(Self, Self) -> Self
+pub fn Tensor::div(Self, Self) -> Self
+pub fn Tensor::mul(Self, Self) -> Self
+pub fn Tensor::new(data~ : Array[Float], shape~ : Array[Int32]) -> Self
+pub fn Tensor::sub(Self, Self) -> Self
+pub fn Tensor::view(Self) -> TensorView
+pub impl Add for Tensor
+pub impl Div for Tensor
+pub impl Mul for Tensor
+pub impl Sub for Tensor
+
+pub struct TensorView {
+  data : ArrayView[Float]
+  shape : Array[Int32]
+}
+pub fn TensorView::dim(Self, Int32) -> Int32
+pub fn TensorView::new(data~ : ArrayView[Float], shape~ : Array[Int32]) -> Self
+pub fn TensorView::rank(Self) -> Int32
+pub fn TensorView::slice_first_axis(Self, Int32) -> Self
 
 // Type aliases
 

@@ -11,40 +11,34 @@
 /// Variance is exploding due to high dimension. and Variance Scaling Rule
 /// tell us the when you multiple a variable by C, its variance is C squared.
 fn scaled_dot_product_attention(
-  query~ : ArrayView[Float],
-  keys~ : ArrayView[Float],
-  values~ : ArrayView[Float],
-  sequence_length~ : Int32,
-  head_dim~ : Int32,
-) -> Array[Float] {
-  if sequence_length <= 0 {
-    abort("attention sequence length must be positive")
+  query~ : @tensor.TensorView,
+  keys~ : @tensor.TensorView,
+  values~ : @tensor.TensorView,
+) -> @tensor.Tensor {
+  if query.rank() != 1 || keys.rank() != 2 || values.rank() != 2 {
+    abort("attention expects a query vector and key/value matrices")
   }
-  if head_dim <= 0 {
-    abort("attention head dimension must be positive")
+  if keys.shape != values.shape {
+    abort("attention keys and values must have the same shape")
   }
-  if query.length() != head_dim {
+  let sequence_length = keys.dim(0)
+  let head_dim = keys.dim(1)
+  if sequence_length == 0 || head_dim == 0 {
+    abort("attention sequence length and head dimension must be positive")
+  }
+  if query.dim(0) != head_dim {
     abort("attention query length must equal head dimension")
-  }
-  let expected_length = sequence_length * head_dim
-  if keys.length() != expected_length {
-    abort("attention keys have an invalid length")
-  }
-  if values.length() != expected_length {
-    abort("attention values have an invalid length")
   }
 
   let scale = Float::from_int(head_dim).sqrt()
-  let scores = @tensor.mat_vec_mul(
-    matrix=keys,
-    shape=[sequence_length, head_dim],
-    vector=query,
-  ).map(score => score / scale)
-  let attention_weights = softmax(scores)
+  let scores = @tensor.mat_vec_mul(matrix=keys, vector=query)
+  let scaled_scores = @tensor.Tensor::new(
+    data=scores.data.map(score => score / scale),
+    shape=scores.shape,
+  )
+  let attention_weights = softmax(input=scaled_scores.view())
 
-  @tensor.vec_mat_mul(vector=attention_weights, matrix=values, shape=[
-    sequence_length, head_dim,
-  ])
+  @tensor.vec_mat_mul(vector=attention_weights.view(), matrix=values)
 }
 
 ///|
@@ -56,23 +50,77 @@ fn scaled_dot_product_attention(
 /// `input` is one head’s query or key vector of length head_dim
 /// `position` is the token's absolute position in the sequence
 /// `rope_theta` comes from `Config.rope_theta`— Qwen3 uses 1000000
+/// Q and A ===
+/// What is the token's absolute position? Token position is the position in the array of token IDs produced by the tokenizer
+/// What is pair's index
+/// How to find the head_dim? is it the width (columns) of the weight matrix?
+///  
 fn apply_rope(
-  input : ArrayView[Float],
-  position : Int32,
-  rope_theta : Float,
-) -> Array[Float] {
-  abort("TODO")
+  input~ : @tensor.TensorView,
+  position~ : Int32,
+  rope_theta~ : Float,
+) -> @tensor.Tensor {
+  if input.rank() != 1 {
+    abort("RoPE input must be one head vector")
+  }
+  let head_dim = input.dim(0)
+  if head_dim == 0 || head_dim % 2 != 0 {
+    abort("RoPE head dimension must be positive and even")
+  }
+  if position < 0 {
+    abort("RoPE position must not be negative")
+  }
+  if rope_theta <= 0.0 {
+    abort("RoPE theta must be positive")
+  }
+
+  let half_dim = head_dim / 2
+  let position_float = Float::from_int(position)
+  let head_dim_float = Float::from_int(head_dim)
+
+  let rotations = Array::makei(half_dim, pair_index => {
+    let exponent = Float::from_int(2 * pair_index) / head_dim_float
+
+    let frequency = 1.0F / @math.powf(rope_theta, exponent)
+    let angle = position_float * frequency
+
+    (@math.cosf(angle), @math.sinf(angle))
+  })
+
+  let data = Array::makei(head_dim, dimension => {
+    let pair_index = if dimension < half_dim {
+      dimension
+    } else {
+      dimension - half_dim
+    }
+    let (cosine, sine) = rotations[pair_index]
+    let first = input.data[pair_index]
+    let second = input.data[pair_index + half_dim]
+    if dimension < half_dim {
+      first * cosine - second * sine
+    } else {
+      first * sine + second * cosine
+    }
+  })
+  @tensor.Tensor::new(data~, shape=input.shape)
 }
 
-// After RoPE, the remaining attention work is:
-
-// 1. apply Q/K/V projections for each decoder layer;
-// 2. apply Qwen3’s query/key normalization;
-// 3. split vectors into attention heads;
-// 4. apply RoPE to queries and keys;
-// 5. store keys and values in the KV cache;
-// 6. run your scaled dot-product attention for each head;
-// 7. implement grouped-query attention;
-// 8. concatenate head outputs and apply the output projection.
-
-// So the immediate task is a **single-head `apply_rope`**, tested independently before integrating it into multi-head attention.
+///|
+/// Run grouped-query attention for one token and concatenate all head outputs.
+///
+/// Expected shapes:
+/// - queries: `[num_query_heads, head_dim]`
+/// - keys:    `[num_key_value_heads, sequence_length, head_dim]`
+/// - values:  `[num_key_value_heads, sequence_length, head_dim]`
+///
+/// Queries and keys must already have RoPE applied. Keys and values are
+/// head-major, so each KV head's complete sequence cache is contiguous.
+/// Each group of query heads shares one KV head. The output shape is
+/// `[num_query_heads * head_dim]`.
+fn grouped_query_attention(
+  queries~ : @tensor.TensorView,
+  keys~ : @tensor.TensorView,
+  values~ : @tensor.TensorView,
+) -> @tensor.Tensor {
+  abort("TODO")
+}
