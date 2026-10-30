@@ -129,5 +129,65 @@ fn grouped_query_attention(
   keys~ : TensorView,
   values~ : TensorView,
 ) -> Tensor {
+  // 1. Validate the ranks: queries = 2, keys = 3, values = 3.
+  //    Require keys.shape == values.shape, nonzero head counts/dimensions,
+  //    and matching head_dim between queries and the KV caches.
+  if queries.rank() != 2 {
+    abort("queries rank need to be 2")
+  }
+
+  if keys.rank() != 3 {
+    abort("keys' rank need to be 3")
+  }
+
+  if values.rank() != 3 {
+    abort("values' rank need to be 3")
+  }
+
+  if keys.shape != values.shape {
+    abort("keys.shape should eq with values.shape")
+  }
+
+  // 2. Derive all dimensions from the tensor shapes:
+  //    num_query_heads     = queries.dim(0)
+  //    head_dim            = queries.dim(1)
+  //    num_key_value_heads = keys.dim(0)
+  //    sequence_length     = keys.dim(1)
+  //    Also check keys.dim(2) == head_dim.
+  let num_query_heads = queries.dim(0)
+  let head_dim = queries.dim(1)
+
+  let num_key_value_heads = keys.dim(0)
+  let sequence_length = keys.dim(1)
+
+  if keys.dim(2) != head_dim {
+    abort("Need matching head_dim between queries and the KV caches")
+  }
+
+  // 3. Require num_query_heads % num_key_value_heads == 0, then calculate:
+  //    group_size = num_query_heads / num_key_value_heads.
+  //    Qwen3 has group_size = 16 / 8 = 2.
+
+  // 4. Create one output per query head with Array::makei(num_query_heads, ...).
+  //    Inside that function, calculate the shared KV head:
+  //    kv_head_index = query_head_index / group_size.
+
+  // 5. Select the current head's inputs without copying:
+  //    query       = queries.slice_first_axis(query_head_index) // [head_dim]
+  //    head_keys   = keys.slice_first_axis(kv_head_index)       // [sequence_length, head_dim]
+  //    head_values = values.slice_first_axis(kv_head_index)     // [sequence_length, head_dim]
+
+  // 6. Call scaled_dot_product_attention(query=query, keys=head_keys,
+  //    values=head_values). Collect each returned Tensor in head_outputs.
+  //    Every output has shape [head_dim].
+
+  // 7. Concatenate head_outputs into one flat Array[Float] of length
+  //    num_query_heads * head_dim. For each flat output index, you can use:
+  //    head_index = flat_index / head_dim
+  //    dimension  = flat_index % head_dim
+  //    value      = head_outputs[head_index].data[dimension]
+
+  // 8. Return Tensor::new(data=concatenated_data,
+  //    shape=[num_query_heads * head_dim]).
   abort("TODO")
 }
