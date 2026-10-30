@@ -9,7 +9,7 @@
 //   "moonbitlang/x@0.4.6",
 // }
 
-name = "username/qwen3"
+name = "zw/qwen3"
 
 version = "0.1.0"
 

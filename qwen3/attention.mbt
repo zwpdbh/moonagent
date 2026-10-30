@@ -11,10 +11,10 @@
 /// Variance is exploding due to high dimension. and Variance Scaling Rule
 /// tell us the when you multiple a variable by C, its variance is C squared.
 fn scaled_dot_product_attention(
-  query~ : @tensor.TensorView,
-  keys~ : @tensor.TensorView,
-  values~ : @tensor.TensorView,
-) -> @tensor.Tensor {
+  query~ : TensorView,
+  keys~ : TensorView,
+  values~ : TensorView,
+) -> Tensor {
   if query.rank() != 1 || keys.rank() != 2 || values.rank() != 2 {
     abort("attention expects a query vector and key/value matrices")
   }
@@ -32,7 +32,7 @@ fn scaled_dot_product_attention(
 
   let scale = Float::from_int(head_dim).sqrt()
   let scores = @tensor.mat_vec_mul(matrix=keys, vector=query)
-  let scaled_scores = @tensor.Tensor::new(
+  let scaled_scores = Tensor::new(
     data=scores.data.map(score => score / scale),
     shape=scores.shape,
   )
@@ -56,10 +56,10 @@ fn scaled_dot_product_attention(
 /// How to find the head_dim? is it the width (columns) of the weight matrix?
 ///  
 fn apply_rope(
-  input~ : @tensor.TensorView,
+  input~ : TensorView,
   position~ : Int32,
   rope_theta~ : Float,
-) -> @tensor.Tensor {
+) -> Tensor {
   if input.rank() != 1 {
     abort("RoPE input must be one head vector")
   }
@@ -102,7 +102,7 @@ fn apply_rope(
       first * sine + second * cosine
     }
   })
-  @tensor.Tensor::new(data~, shape=input.shape)
+  Tensor::new(data~, shape=input.shape)
 }
 
 ///|
@@ -118,9 +118,9 @@ fn apply_rope(
 /// Each group of query heads shares one KV head. The output shape is
 /// `[num_query_heads * head_dim]`.
 fn grouped_query_attention(
-  queries~ : @tensor.TensorView,
-  keys~ : @tensor.TensorView,
-  values~ : @tensor.TensorView,
-) -> @tensor.Tensor {
+  queries~ : TensorView,
+  keys~ : TensorView,
+  values~ : TensorView,
+) -> Tensor {
   abort("TODO")
 }

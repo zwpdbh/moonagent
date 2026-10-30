@@ -13,10 +13,7 @@
 /// end = start + hidden_size
 /// "Hidden Size" means the number of Float values used to represent one token insize the model.
 /// Some token id -> 1024 Float values
-fn embedding_lookup(
-  weights~ : @tensor.TensorView,
-  token_id~ : Int32,
-) -> @tensor.TensorView {
+fn embedding_lookup(weights~ : TensorView, token_id~ : Int32) -> TensorView {
   if weights.rank() != 2 {
     abort("embedding weights must be a rank-2 tensor")
   }
@@ -32,11 +29,7 @@ fn embedding_lookup(
 /// after the final decoder layer.
 /// The 'eps' is a small positive number added for numerical stability.
 /// In short: epsilon protects the division without significantly changing normal RMSNorm behavior.
-fn rms_norm(
-  input~ : @tensor.TensorView,
-  weight~ : @tensor.TensorView,
-  eps~ : Float,
-) -> @tensor.Tensor {
+fn rms_norm(input~ : TensorView, weight~ : TensorView, eps~ : Float) -> Tensor {
   if input.rank() != 1 || weight.rank() != 1 || input.shape != weight.shape {
     abort("RMSNorm input and weight must be vectors with the same shape")
   }
@@ -52,49 +45,43 @@ fn rms_norm(
   let mean_square = sum_of_squares / Float::from_int(input.data.length())
   let inverse_rms = 1.0F / (mean_square + eps).sqrt()
   let data = input.data.mapi((i, value) => value * inverse_rms * weight.data[i])
-  @tensor.Tensor::new(data~, shape=input.shape)
+  Tensor::new(data~, shape=input.shape)
 }
 
 ///|
 /// Multiply an input vector by a learned weight matrix.
 /// Weight shape is `[out_features, in_features]`; output shape is
 /// `[out_features]`.
-fn linear(
-  input~ : @tensor.TensorView,
-  weight~ : @tensor.TensorView,
-) -> @tensor.Tensor {
+fn linear(input~ : TensorView, weight~ : TensorView) -> Tensor {
   @tensor.mat_vec_mul(matrix=weight, vector=input)
 }
 
 ///|
 /// SiLU activation (Sigmoid Linear Unit)
 /// It is used in every MLP block
-fn silu(input~ : @tensor.TensorView) -> @tensor.Tensor {
+fn silu(input~ : TensorView) -> Tensor {
   let data = input.data.map(value => value / (1.0F + @math.expf(-value)))
-  @tensor.Tensor::new(data~, shape=input.shape)
+  Tensor::new(data~, shape=input.shape)
 }
 
 ///|
 /// Element-wise multiplication
-fn elementwise_mul(
-  left~ : @tensor.TensorView,
-  right~ : @tensor.TensorView,
-) -> @tensor.Tensor {
+fn elementwise_mul(left~ : TensorView, right~ : TensorView) -> Tensor {
   if left.shape != right.shape {
     abort("element-wise multiplication requires equal shapes")
   }
   let data = left.data.mapi((index, value) => value * right.data[index])
-  @tensor.Tensor::new(data~, shape=left.shape)
+  Tensor::new(data~, shape=left.shape)
 }
 
 ///|
 /// Qwen3 gated MLP: down_proj(SiLU(gate_proj(input)) * up_proj(input)).
 fn mlp(
-  input~ : @tensor.TensorView,
-  gate_weight~ : @tensor.TensorView,
-  up_weight~ : @tensor.TensorView,
-  down_weight~ : @tensor.TensorView,
-) -> @tensor.Tensor {
+  input~ : TensorView,
+  gate_weight~ : TensorView,
+  up_weight~ : TensorView,
+  down_weight~ : TensorView,
+) -> Tensor {
   let gate_projection = linear(input~, weight=gate_weight)
   let activated_gate = silu(input=gate_projection.view())
   let up_projection = linear(input~, weight=up_weight)
@@ -107,7 +94,7 @@ fn mlp(
 
 ///|
 /// Convert a vector of scores to weights that sum to 1.
-fn softmax(input~ : @tensor.TensorView) -> @tensor.Tensor {
+fn softmax(input~ : TensorView) -> Tensor {
   if input.rank() != 1 || input.data.length() == 0 {
     abort("softmax input must be a non-empty vector")
   }
@@ -122,5 +109,5 @@ fn softmax(input~ : @tensor.TensorView) -> @tensor.Tensor {
   let exponentials = input.data.map(value => @math.expf(value - maximum))
   let sum = exponentials.fold(init=0.0F, (acc, value) => acc + value)
   let data = exponentials.map(value => value / sum)
-  @tensor.Tensor::new(data~, shape=input.shape)
+  Tensor::new(data~, shape=input.shape)
 }

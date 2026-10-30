@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "username/qwen3"
+package "zw/qwen3"
 
 import {
   "moonbitlang/core/debug",
