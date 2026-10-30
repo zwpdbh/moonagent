@@ -106,7 +106,7 @@ fn apply_rope(
 }
 
 ///|
-/// Run grouped-query attention for one token and concatenate all head outputs.
+/// Run grouped-query attention(GQA) for one token and concatenate all head outputs.
 ///
 /// Expected shapes:
 /// - queries: `[num_query_heads, head_dim]`
@@ -117,6 +117,13 @@ fn apply_rope(
 /// head-major, so each KV head's complete sequence cache is contiguous.
 /// Each group of query heads shares one KV head. The output shape is
 /// `[num_query_heads * head_dim]`.
+/// 
+/// Q and A === 
+/// 1. What is tensor why it is used to represent queries, keys and values.
+/// 2. What is queries, what is keys and values.
+/// 3. Given a queries which is TensorView, what is its num_query_heads?
+/// 4. Given keys and values, what is num_key_value head
+/// 5. What is group size
 fn grouped_query_attention(
   queries~ : TensorView,
   keys~ : TensorView,

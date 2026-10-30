@@ -67,8 +67,30 @@ pub fn TensorView::dim(self : TensorView, axis : Int32) -> Int32 {
 }
 
 ///|
-/// Slice one index from the first axis without copying data.
-/// The returned rank is one less than the input rank.
+/// Select one index from axis 0, the leftmost dimension in `shape`, without
+/// copying data. The selected dimension is removed, so the returned rank is one
+/// less than the input rank. Axis 0 may represent a matrix row, an attention
+/// head, or another outermost dimension depending on the tensor.
+///
+/// The returned view is contiguous because it selects one complete block from
+/// the original row-major storage. Its starting offset is
+/// `index * product(shape[1:])`.
+///
+/// For example, a `[3, 2, 2]` tensor can represent three KV heads, two sequence
+/// positions, and two feature dimensions:
+///
+/// ```text
+/// [
+///   [[1, 2], [3, 4]],      // KV head 0
+///   [[5, 6], [7, 8]],      // KV head 1
+///   [[9, 10], [11, 12]],   // KV head 2
+/// ]
+/// Flat data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+/// ```
+///
+/// `slice_first_axis(1)` selects KV head 1 and returns a view with flat data
+/// `[5, 6, 7, 8]` and shape `[2, 2]`. This is equivalent to PyTorch's
+/// `tensor.select(dim=0, index=1)` or `tensor[1]`.
 pub fn TensorView::slice_first_axis(
   self : TensorView,
   index : Int32,
