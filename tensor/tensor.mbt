@@ -133,6 +133,26 @@ pub fn dot(left~ : ArrayView[Float], right~ : ArrayView[Float]) -> Float {
 }
 
 ///|
+/// Convert a vector of scores to weights that sum to 1.
+pub fn softmax(input~ : TensorView) -> Tensor {
+  if input.rank() != 1 || input.data.length() == 0 {
+    abort("softmax input must be a non-empty vector")
+  }
+
+  let maximum = input.data.fold(init=input.data[0], (current_max, value) => {
+    if value > current_max {
+      value
+    } else {
+      current_max
+    }
+  })
+  let exponentials = input.data.map(value => @math.expf(value - maximum))
+  let sum = exponentials.fold(init=0.0F, (acc, value) => acc + value)
+  let data = exponentials.map(value => value / sum)
+  Tensor::new(data~, shape=input.shape)
+}
+
+///|
 /// Validate that a tensor is a matrix and return `(rows, columns)`.
 fn matrix_dimensions(matrix : TensorView) -> (Int32, Int32) {
   if matrix.rank() != 2 {

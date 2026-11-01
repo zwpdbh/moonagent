@@ -36,7 +36,7 @@ fn scaled_dot_product_attention(
     data=scores.data.map(score => score / scale),
     shape=scores.shape,
   )
-  let attention_weights = softmax(input=scaled_scores.view())
+  let attention_weights = @tensor.softmax(input=scaled_scores.view())
 
   @tensor.vec_mat_mul(vector=attention_weights.view(), matrix=values)
 }
@@ -201,4 +201,77 @@ fn grouped_query_attention(
   // 8. Return Tensor::new(data=concatenated_data,
   //    shape=[num_query_heads * head_dim]).
   abort("TODO")
+}
+
+///|
+test "understanding query, key, value in transformers and LLMs" {
+  // Create the vector representations (embeddings) for each token
+  // These embeddings, as simplified vectors, represent how the tokens are encoded in the transformer model, 
+  // capturing their “meaning” for further computations:
+  let token_dog = Tensor::new(data=[1.0, -0.5, 0.2], shape=[3])
+  let token_plays = Tensor::new(data=[0.4, 0.1, 0.4], shape=[3])
+  let token_fetch = Tensor::new(data=[0.6, -0.8, 0.7], shape=[3])
+
+  // Next, we create randomized weight matrices for the query, key, and value transformations.
+  // In a real transformer model, these weights are learned during training (and with way more layers).
+  let w_q = Tensor::rand([3, 3])
+  let w_k = Tensor::rand([3, 3])
+  let w_v = Tensor::rand([3, 3])
+
+  // Now we compute the query, key and value vectors for tokens.
+  // We will focus on "plays" as the querying token, seeking information
+  // from "dog" and "fetch".
+  // The query vector tells us what "plays" is seeking to understand.
+  // The key vectors for "dog" and "fetch" represent the information those tokens hold,
+  // and the value vectors represent the actal content those tokens will contribute if found relevant.
+
+  // "plays" is the querying token
+  let query_plays = @tensor.vec_mat_mul(
+    vector=token_plays.view(),
+    matrix=w_q.view(),
+  )
+
+  // compute key and value for "dog"
+  let key_dog = @tensor.vec_mat_mul(vector=token_dog.view(), matrix=w_k.view())
+  let value_dot = @tensor.vec_mat_mul(
+    vector=token_dog.view(),
+    matrix=w_v.view(),
+  )
+
+  // compute key and value for "fetch"
+  let key_fetch = @tensor.vec_mat_mul(
+    vector=token_fetch.view(),
+    matrix=w_k.view(),
+  )
+  let value_fetch = @tensor.vec_mat_mul(
+    vector=token_fetch.view(),
+    matrix=w_v.view(),
+  )
+
+  // To determine how relevant "dog" and "fetch" are to "plays", we calculate the similarity scores
+  // by taking the dot product between the query from "plays" and the keys of the other tokens.
+  // cals sim score for "plays" query to "dog" key 
+  let similarity_plays_dog = @tensor.dot(
+    left=query_plays.data,
+    right=key_dog.data,
+  )
+  // cals sim score for "plays" query to "fetch" key
+  let similarity_plays_fetch = @tensor.dot(
+    left=query_plays.data,
+    right=key_fetch.data,
+  )
+
+  // next use the softmax function to covert these similarity scores into attension weights.
+  // this weights determine how much attention "plays" should pay to "dog" and "fetch"
+  let similarity_score = Tensor::new(
+    data=[similarity_plays_dog, similarity_plays_fetch],
+    shape=[2],
+  )
+  let attention_weights = @tensor.softmax(input=similarity_score.view())
+
+  // using these attention weights, we compute the weighted sum of the value vector from "dog" and "fetch"
+  // to update the context for "plays"
+  let weighted_value_dog = attention_weights[0] * value_dog
+  let weighted_value_fetch = attention_weights[1] * value_fetch
+  let updated_context_plays = weighted_value_dog + weighted_value_fetch
 }
