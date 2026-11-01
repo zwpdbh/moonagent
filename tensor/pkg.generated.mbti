@@ -14,6 +14,8 @@ pub fn elementwise_sub(left~ : TensorView, right~ : TensorView) -> Tensor
 
 pub fn mat_vec_mul(matrix~ : TensorView, vector~ : TensorView) -> Tensor
 
+pub fn scale(input~ : TensorView, scalar~ : Float) -> Tensor
+
 pub fn vec_mat_mul(vector~ : TensorView, matrix~ : TensorView) -> Tensor
 
 // Errors
@@ -27,6 +29,8 @@ pub fn Tensor::add(Self, Self) -> Self
 pub fn Tensor::div(Self, Self) -> Self
 pub fn Tensor::mul(Self, Self) -> Self
 pub fn Tensor::new(data~ : Array[Float], shape~ : Array[Int32]) -> Self
+pub fn Tensor::rand(Array[Int32]) -> Self
+pub fn Tensor::scale(Self, Float) -> Self
 pub fn Tensor::sub(Self, Self) -> Self
 pub fn Tensor::view(Self) -> TensorView
 pub impl Add for Tensor

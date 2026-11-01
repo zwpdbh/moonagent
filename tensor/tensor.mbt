@@ -34,6 +34,17 @@ pub fn Tensor::new(data~ : Array[Float], shape~ : Array[Int32]) -> Tensor {
 }
 
 ///|
+/// Construct a tensor filled with pseudo-random values uniformly distributed in
+/// `[0, 1)`, similar to NumPy's `np.random.rand(...)`.
+///
+/// Example: `Tensor::rand([3, 3])` creates nine values with shape `[3, 3]`.
+pub fn Tensor::rand(shape : Array[Int32]) -> Tensor {
+  let rng = @random.Rand()
+  let data = Array::makei(checked_shape_size(shape), _ => rng.float())
+  Tensor::new(data~, shape~)
+}
+
+///|
 /// Construct a borrowed tensor view after validating its data length and shape.
 pub fn TensorView::new(
   data~ : ArrayView[Float],
@@ -205,6 +216,19 @@ pub fn elementwise_mul(left~ : TensorView, right~ : TensorView) -> Tensor {
 /// Divide corresponding elements without broadcasting.
 pub fn elementwise_div(left~ : TensorView, right~ : TensorView) -> Tensor {
   zip_with(left, right, (a, b) => a / b)
+}
+
+///|
+/// Multiply every tensor element by one scalar while preserving its shape.
+pub fn scale(input~ : TensorView, scalar~ : Float) -> Tensor {
+  let data = input.data.map(value => value * scalar)
+  Tensor::new(data~, shape=input.shape)
+}
+
+///|
+/// Scale this owned tensor without copying it first.
+pub fn Tensor::scale(self : Tensor, scalar : Float) -> Tensor {
+  scale(input=self.view(), scalar~)
 }
 
 ///|

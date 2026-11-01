@@ -501,3 +501,59 @@ test "panic apply_rope rejects an odd head dimension" {
     ),
   )
 }
+
+///|
+test "understanding query, key, value in transformers and LLMs" {
+  let token_dog = test_vector([1.0, -0.5, 0.2])
+  let token_plays = test_vector([0.4, 0.1, 0.4])
+  let token_fetch = test_vector([0.6, -0.8, 0.7])
+  let identity = test_tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], [
+    3, 3,
+  ])
+
+  let query_plays = @tensor.vec_mat_mul(
+    vector=token_plays.view(),
+    matrix=identity.view(),
+  )
+  let key_dog = @tensor.vec_mat_mul(
+    vector=token_dog.view(),
+    matrix=identity.view(),
+  )
+  let key_fetch = @tensor.vec_mat_mul(
+    vector=token_fetch.view(),
+    matrix=identity.view(),
+  )
+  let value_dog = @tensor.vec_mat_mul(
+    vector=token_dog.view(),
+    matrix=identity.view(),
+  )
+  let value_fetch = @tensor.vec_mat_mul(
+    vector=token_fetch.view(),
+    matrix=identity.view(),
+  )
+
+  let similarity_dog = @tensor.dot(
+    left=query_plays.data[:],
+    right=key_dog.data[:],
+  )
+  let similarity_fetch = @tensor.dot(
+    left=query_plays.data[:],
+    right=key_fetch.data[:],
+  )
+  assert_true((similarity_dog - 0.43).abs() < 0.000001)
+  assert_true((similarity_fetch - 0.44).abs() < 0.000001)
+
+  let attention_weights = softmax(
+    input=test_vector([similarity_dog, similarity_fetch]).view(),
+  )
+  assert_true((attention_weights.data[0] - 0.49750003).abs() < 0.000001)
+  assert_true((attention_weights.data[1] - 0.50249994).abs() < 0.000001)
+
+  let weighted_dog = value_dog.scale(attention_weights.data[0])
+  let weighted_fetch = value_fetch.scale(attention_weights.data[1])
+  let updated_context = weighted_dog + weighted_fetch
+  assert_true((updated_context.data[0] - 0.799).abs() < 0.000001)
+  assert_true((updated_context.data[1] + 0.65075).abs() < 0.000001)
+  assert_true((updated_context.data[2] - 0.45125).abs() < 0.000001)
+  assert_eq(updated_context.shape, [3])
+}

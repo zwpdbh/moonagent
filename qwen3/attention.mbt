@@ -118,12 +118,23 @@ fn apply_rope(
 /// Each group of query heads shares one KV head. The output shape is
 /// `[num_query_heads * head_dim]`.
 /// 
-/// Q and A === 
-/// 1. What is tensor why it is used to represent queries, keys and values.
-/// 2. What is queries, what is keys and values.
-/// 3. Given a queries which is TensorView, what is its num_query_heads?
-/// 4. Given keys and values, what is num_key_value head
-/// 5. What is group size
+/// Each token generates query, key and value vector.
+/// Query: What is the token is seeking (what information it needs)
+/// Key: The information the token holds (how relevant it is to other tokens)
+/// Value: The actual content the token shares if its key is found relevant
+/// 
+/// These vectors are derived from the token's embedding through learned 
+/// transformations using weight matrices: 
+/// Wq(for queries)
+/// Wk(for keys)
+/// Wv(for values)
+/// 
+/// Each token has its query, key, and value vectors, the transformer follows a
+/// search-match-update process to determine which tokens provide the most relevant context:
+/// Use dot product between a token's query with other token's key to measure relevance.
+/// The similarity scores are passed through a softmax function to normalize them into
+/// attention weights. The transformer then compute a weighted sum of the value vectors 
+/// based on these attention weights.
 fn grouped_query_attention(
   queries~ : TensorView,
   keys~ : TensorView,

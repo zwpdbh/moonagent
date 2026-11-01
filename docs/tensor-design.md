@@ -49,6 +49,10 @@ other operations with different shape semantics keep explicit names such as
 `mat_vec_mul` and `vec_mat_mul`. Operators make residual arithmetic concise
 without hiding the meaning of more complex operations.
 
+Scalar multiplication uses the named `scale` operation. It multiplies every
+element by one `Float` and preserves shape; it is separate from tensor-tensor
+operator overloading.
+
 ## Incremental feature growth
 
 The initial implementation supports contiguous row-major tensors only. Strides,

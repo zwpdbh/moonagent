@@ -109,3 +109,19 @@ test "panic arithmetic operators reject mismatched shapes" {
   let right = test_tensor([1.0, 2.0], [1, 2])
   ignore(left + right)
 }
+
+///|
+test "tensor rand creates uniform values with the requested shape" {
+  let tensor = @tensor.Tensor::rand([3, 3])
+  assert_eq(tensor.shape, [3, 3])
+  assert_eq(tensor.data.length(), 9)
+  for value in tensor.data {
+    assert_true(value >= 0.0 && value < 1.0)
+  }
+}
+
+///|
+test "scale multiplies every tensor value by a scalar" {
+  let tensor = test_tensor([1.0, 2.0, 3.0, 4.0], [2, 2])
+  assert_tensor_eq(tensor.scale(0.5), [0.5, 1.0, 1.5, 2.0], [2, 2])
+}
