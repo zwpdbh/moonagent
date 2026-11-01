@@ -63,6 +63,21 @@ pub fn Tensor::view(self : Tensor) -> TensorView {
 }
 
 ///|
+/// Read one element from a rank-1 tensor with `tensor[index]`.
+/// For higher-rank tensors, use `slice_first_axis` to obtain a tensor view
+/// instead of expecting a scalar element.
+#alias("_[_]")
+pub fn Tensor::at(self : Tensor, index : Int32) -> Float {
+  if self.shape.length() != 1 {
+    abort("scalar indexing requires a rank-1 tensor")
+  }
+  if index < 0 || index >= self.data.length() {
+    abort("tensor index is out of bounds")
+  }
+  self.data[index]
+}
+
+///|
 /// Return the number of dimensions.
 pub fn TensorView::rank(self : TensorView) -> Int32 {
   self.shape.length()

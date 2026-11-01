@@ -125,3 +125,10 @@ test "scale multiplies every tensor value by a scalar" {
   let tensor = test_tensor([1.0, 2.0, 3.0, 4.0], [2, 2])
   assert_tensor_eq(tensor.scale(0.5), [0.5, 1.0, 1.5, 2.0], [2, 2])
 }
+
+///|
+test "tensor supports scalar indexing for vectors" {
+  let tensor = test_tensor([1.0, 2.0, 3.0], [3])
+  assert_eq(tensor[0], 1.0)
+  assert_eq(tensor[2], 3.0)
+}

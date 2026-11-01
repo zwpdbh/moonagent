@@ -28,6 +28,8 @@ pub struct Tensor {
   shape : Array[Int32]
 }
 pub fn Tensor::add(Self, Self) -> Self
+#alias("_[_]")
+pub fn Tensor::at(Self, Int32) -> Float
 pub fn Tensor::div(Self, Self) -> Self
 pub fn Tensor::mul(Self, Self) -> Self
 pub fn Tensor::new(data~ : Array[Float], shape~ : Array[Int32]) -> Self

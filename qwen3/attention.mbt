@@ -232,7 +232,7 @@ test "understanding query, key, value in transformers and LLMs" {
   )
 
   // compute key and value for "dog"
-  let key_dog = @tensor.vec_mat_mul(vector=token_dog.view(), matrix=w_k.view())
+  let key_dot = @tensor.vec_mat_mul(vector=token_dog.view(), matrix=w_k.view())
   let value_dot = @tensor.vec_mat_mul(
     vector=token_dog.view(),
     matrix=w_v.view(),
@@ -253,7 +253,7 @@ test "understanding query, key, value in transformers and LLMs" {
   // cals sim score for "plays" query to "dog" key 
   let similarity_plays_dog = @tensor.dot(
     left=query_plays.data,
-    right=key_dog.data,
+    right=key_dot.data,
   )
   // cals sim score for "plays" query to "fetch" key
   let similarity_plays_fetch = @tensor.dot(
@@ -271,7 +271,7 @@ test "understanding query, key, value in transformers and LLMs" {
 
   // using these attention weights, we compute the weighted sum of the value vector from "dog" and "fetch"
   // to update the context for "plays"
-  let weighted_value_dog = attention_weights[0] * value_dog
-  let weighted_value_fetch = attention_weights[1] * value_fetch
+  let weighted_value_dog = value_dot.scale(attention_weights[0])
+  let weighted_value_fetch = value_fetch.scale(attention_weights[1])
   let updated_context_plays = weighted_value_dog + weighted_value_fetch
 }
