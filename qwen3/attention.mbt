@@ -274,4 +274,5 @@ test "understanding query, key, value in transformers and LLMs" {
   let weighted_value_dog = value_dot.scale(attention_weights[0])
   let weighted_value_fetch = value_fetch.scale(attention_weights[1])
   let updated_context_plays = weighted_value_dog + weighted_value_fetch
+  // demo finished: from https://medium.com/ai-assimilating-intelligence/understanding-query-key-value-in-transformers-c579b93054cc
 }
