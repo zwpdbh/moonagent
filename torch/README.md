@@ -33,17 +33,27 @@ Python lists are currently converted by copying.
 
 The existing native `zw/tensor` package is separate from this experiment.
 
-## Repository layout
+## Using the local `python.mbt` fork as a dependency
 
-This guide assumes these existing paths:
+The fork is an independent Git repository hosted at
+[https://github.com/zwpdbh/python.mbt.git](https://github.com/zwpdbh/python.mbt.git). If it has not been cloned yet,
+create it beside the `moonagent` workspace:
+
+```bash
+cd /home/zw/code/moonbit_programming
+git clone https://github.com/zwpdbh/python.mbt.git forked/python.mbt
+```
+
+The resulting layout is:
 
 ```text
 /home/zw/code/moonbit_programming/moonagent
 /home/zw/code/moonbit_programming/forked/python.mbt
 ```
 
-The workspace file `moonagent/moon.work` includes both the wrapper and the
-local `python.mbt` fork:
+This project does not import the fork through its Git URL. Instead, MoonBit
+resolves it as a local workspace member. The workspace file
+`moonagent/moon.work` contains:
 
 ```toml
 members = [
@@ -56,9 +66,41 @@ members = [
 ]
 ```
 
-The fork provides package `Kaida-Amethyst/python@0.1.6`. The `torch/moon.mod`
-module imports that version, and `torch/moon.pkg` imports the package for the
-native target.
+Member paths are relative to `moon.work`, so `../forked/python.mbt` resolves to
+`/home/zw/code/moonbit_programming/forked/python.mbt`. Local changes in the fork
+are therefore used by subsequent MoonBit builds without publishing or
+reinstalling a package.
+
+The fork's own `moon.mod` declares the module name
+`Kaida-Amethyst/python` and version `0.1.6`. Consumers use that module name,
+not the Git repository URL. Two declarations are needed in `zw/torch`:
+
+1. `torch/moon.mod` makes the module and its version available to the
+   `zw/torch` module:
+
+   ```toml
+   import {
+     "Kaida-Amethyst/python@0.1.6",
+   }
+   ```
+2. `torch/moon.pkg` imports the package into the current package's namespace:
+
+   ```toml
+   import {
+     "Kaida-Amethyst/python",
+   }
+
+   supported_targets = "native"
+   ```
+
+This allows `torch/torch.mbt` to use APIs such as `@python.pyimport`,
+`PyObject`, `PyCallable`, `PyTuple`, and `PyList`. The native restriction comes
+from the fork's CPython C-API integration.
+
+Because the fork is a workspace member, no `moon add` command is needed for
+this local setup. Running `moon add Kaida-Amethyst/python` would instead be the
+starting point for using the published package, not for selecting this local
+Git fork.
 
 ## 1. Install prerequisites
 
@@ -105,9 +147,21 @@ system.
 
 ## 3. Make the environment visible to embedded CPython
 
-`python.mbt` embeds CPython in the MoonBit native executable. Merely creating or
-activating `.venv` does not reliably make its packages visible to that embedded
-interpreter, so set `PYTHONPATH` explicitly when running tests or programs:
+Running `moon test` without additional configuration can fail with:
+
+```text
+ModuleNotFoundError: No module named 'torch'
+zw/torch.TorchError.ImportFailed
+```
+
+This can happen even when `.venv/bin/python -c 'import torch'` succeeds.
+`moon test` starts a native MoonBit executable that embeds the system CPython
+3.12 library; it does not launch `.venv/bin/python`. Consequently, the embedded
+interpreter does not automatically search the virtual environment's
+`site-packages`. The `Kaida-Amethyst/python` MoonBit dependency provides only
+the bridge, not the PyTorch package itself.
+
+Set `PYTHONPATH` explicitly when running tests or programs:
 
 ```bash
 export PYTHONPATH=/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages
@@ -120,14 +174,30 @@ cd /home/zw/code/moonbit_programming/moonagent/torch
 moon test --target native
 ```
 
-Without activating the environment in the shell, the equivalent one-command
-form is:
+The recommended project-specific, one-command form is:
 
 ```bash
 cd /home/zw/code/moonbit_programming/moonagent/torch
 PYTHONPATH=/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages \
   moon test --target native
 ```
+
+### Optional: persist the setting in your shell
+
+For a personal setup where you want plain `moon test` to work in every new Bash
+terminal, add this line to `~/.bashrc` and then run `source ~/.bashrc`:
+
+```bash
+export PYTHONPATH="/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+```
+
+For Zsh, add the same line to `~/.zshrc` and run `source ~/.zshrc`.
+
+A shell-wide `PYTHONPATH` affects every Python program started from that shell,
+including other projects and virtual environments. The project-specific command
+above is therefore preferable when working with multiple Python environments.
+Avoid installing PyTorch into the system Python merely to bypass this search-
+path issue.
 
 ## 4. Follow PyTorch code in MoonBit
 
@@ -156,17 +226,17 @@ assert_eq(result.to_array(), [14.0, 32.0, 32.0, 77.0])
 The wrapper currently uses flat input data plus an explicit shape instead of
 nested Python-style lists:
 
-| PyTorch | MoonBit wrapper |
-| --- | --- |
+| PyTorch                | MoonBit wrapper                                  |
+| ---------------------- | ------------------------------------------------ |
 | `torch.tensor(data)` | `@torch.tensor(data=values, shape=dimensions)` |
-| `x.reshape(3, 2)` | `x.reshape([3, 2])` |
-| `x.view(3, 2)` | `x.view([3, 2])` |
-| `x.transpose(0, 1)` | `x.transpose(dim0=0, dim1=1)` |
-| `x.T` | `x.t()` |
-| `x.matmul(y)` | `@torch.matmul(left=x, right=y)` |
-| `x.shape` | `x.shape()` |
-| `x.dtype` | `x.dtype()` |
-| `x.tolist()` | `x.to_array()` for a flat `Array[Double]` |
+| `x.reshape(3, 2)`    | `x.reshape([3, 2])`                            |
+| `x.view(3, 2)`       | `x.view([3, 2])`                               |
+| `x.transpose(0, 1)`  | `x.transpose(dim0=0, dim1=1)`                  |
+| `x.T`                | `x.t()`                                        |
+| `x.matmul(y)`        | `@torch.matmul(left=x, right=y)`               |
+| `x.shape`            | `x.shape()`                                    |
+| `x.dtype`            | `x.dtype()`                                    |
+| `x.tolist()`         | `x.to_array()` for a flat `Array[Double]`    |
 
 `reshape` and `view` delegate shape validation to PyTorch, so PyTorch features
 such as a single inferred `-1` dimension remain available.
