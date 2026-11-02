@@ -1,21 +1,29 @@
 # Using PyTorch from MoonBit
 
-This package explores machine learning with real PyTorch while writing the
-surrounding code in MoonBit. It uses `python.mbt` to call CPython directly; it
-does not reimplement PyTorch operations in MoonBit.
+This workspace supports following PyTorch-based ML and LLM material while
+writing the model and surrounding logic in MoonBit. `zw/torch` delegates the
+numerical engine to real PyTorch through `python.mbt` and CPython; it does not
+reimplement PyTorch kernels.
 
-The current proof of concept covers tensor creation, shapes, data types,
-reshaping, views, transposition, matrix multiplication, and conversion back to
-MoonBit arrays. The examples and tests follow
-[PyTorch in One Hour: From Tensors to Training Neural Networks on Multiple GPUs](https://sebastianraschka.com/teaching/pytorch-1h/).
+The practical pattern is:
+
+1. Read the book's Python/PyTorch code and identify its model and data flow.
+2. Implement that logic in MoonBit using `zw/torch` operations.
+3. Add a thin, reusable wrapper when a required PyTorch operation is missing.
+4. Verify behavior against the book's expected outputs or intermediate values.
+
+This approach is used for both the tensor/training examples and a complete
+Qwen3 forward pass with KV-cache text generation. The current examples follow
+[PyTorch in One Hour](https://sebastianraschka.com/teaching/pytorch-1h/) and
+[Build a Reasoning Model (From Scratch)](https://github.com/rasbt/reasoning-from-scratch).
 
 ## Architecture
 
 ```text
-MoonBit code
+Book/model logic in MoonBit (qwen3, ch02, torch_example)
     |
     v
-zw/torch wrapper
+Reusable tensor/runtime abstractions in zw/torch
     |
     v
 Kaida-Amethyst/python (python.mbt)
@@ -27,12 +35,13 @@ CPython C API
 Python's torch package
 ```
 
-`Tensor` wraps a Python `torch.Tensor` object. Operations such as
-`matmul`, `reshape`, and `transpose` execute inside PyTorch. MoonBit arrays and
-Python lists are currently converted by copying.
+`Tensor` wraps a Python `torch.Tensor` object. Operations such as `matmul`,
+`linear_projection`, `rms_norm`, `reshape`, and `transpose` execute inside
+PyTorch. MoonBit arrays and Python lists are currently converted by copying.
 
-The former native `zw/tensor` package has been removed. Qwen3 and the examples
-now use `Tensor` and real PyTorch operations through this package.
+The Qwen3 model loads safetensors into PyTorch tensors and implements its
+architecture in `qwen3/model.mbt`. A separate native reader remains only for
+education under `educational/safetensors/`; it is not part of inference.
 
 ## Using the local `python.mbt` fork as a dependency
 
@@ -61,8 +70,10 @@ members = [
   "./playground",
   "./utils",
   "./qwen3",
-  "./tensor",
   "./torch",
+  "./torch_example",
+  "./ch02",
+  "./educational/safetensors",
   "../forked/python.mbt",
 ]
 ```
@@ -129,10 +140,12 @@ uv venv --python /usr/bin/python3.12 --clear .venv
 uv pip install --python .venv/bin/python \
   --index-url https://mirror.sjtu.edu.cn/pytorch-wheels/cu126 \
   torch==2.13.0 numpy
+uv pip install --python .venv/bin/python safetensors tokenizers
 ```
 
-This installs the verified PyTorch 2.13.0 + CUDA 12.6 stack and NumPy only in
-`.venv`, leaving the system Python unchanged. The SJTU mirror can substantially
+This installs the verified PyTorch 2.13.0 + CUDA 12.6 stack, NumPy, and the
+Qwen3 checkpoint/tokenizer support packages only in `.venv`, leaving the system
+Python unchanged. The SJTU mirror can substantially
 speed up downloads in China. To use the official PyTorch repository instead,
 replace the mirror URL with `https://download.pytorch.org/whl/cu126`. `.venv/`
 is excluded by the repository's `.gitignore`.
@@ -242,11 +255,42 @@ nested Python-style lists:
 `reshape` and `view` delegate shape validation to PyTorch, so PyTorch features
 such as a single inferred `-1` dimension remain available.
 
+### Porting larger LLM examples
+
+The same pattern scales beyond individual tensor operations. In the Qwen3 port:
+
+- `qwen3/model.mbt` owns the architecture: embeddings, RMSNorm, Q/K/V
+  projections, RoPE, grouped-query attention, SwiGLU MLP, residual connections,
+  and logits.
+- `qwen3/model.mbt` also owns the explicit layer-by-layer KV cache.
+- `qwen3/tokenizer.mbt` performs native Qwen3 token encoding and decoding.
+- `ch02/ch02.mbt` implements the book's cached greedy-generation loop.
+- `zw/torch` supplies the underlying PyTorch tensor operations and inference
+  runtime support.
+
+The model uses the existing Hugging Face cache directly; it does not import the
+book's Python model implementation or require the book repository at runtime.
+The cached directory must contain `config.json`, `model.safetensors`, and
+`tokenizer.json`.
+
+Run the verified generation demo with:
+
+```bash
+cd /home/zw/code/moonbit_programming/moonagent/ch02
+moon run cmd/main --target native
+```
+
+The CLI registers the local Python environment before the first PyTorch import.
+It currently generates 32 tokens from `Explain large language models.` using
+CUDA when available, otherwise CPU.
+
 ## 5. How the binding works
 
 The implementation in `torch/torch.mbt` performs these steps:
 
-1. Import and cache Python's `torch` module with `@python.pyimport("torch")`.
+1. Import Python's `torch` module lazily with `@python.pyimport("torch")`, after
+   the application has configured any required Python search paths. CPython
+   caches the imported module for subsequent operations.
 2. Convert MoonBit numeric arrays into Python lists.
 3. Resolve module functions and tensor methods with `get_attr`.
 4. Build Python positional arguments with `PyTuple`.
@@ -306,15 +350,19 @@ PYTHONPATH=/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site
 
 - The wrapper is native-only and requires CPython plus an installed PyTorch
   package.
+- PyTorch API coverage is intentionally incremental; books that use additional
+  operations may need new thin wrappers in `zw/torch`.
 - Floating-point tensor construction accepts `Array[Double]`; integer labels
   use `int_tensor` with `Array[Int64]`.
-- Array/list conversion copies data. There is no zero-copy buffer integration.
-- Models use wrapped `torch.nn.Sequential` modules rather than MoonBit-defined
-  subclasses of `torch.nn.Module`.
-- Model serialization and distributed/multi-GPU training are not wrapped yet.
+- Array/list conversion copies data. There is no zero-copy buffer integration,
+  so the current bridge prioritizes learning and correctness over production
+  data-transfer performance.
+- `torch.nn.Sequential` is available for simple models. Custom Qwen3 behavior is
+  implemented directly in MoonBit rather than by subclassing Python modules.
+- Checkpoint saving and distributed/multi-GPU training are not wrapped yet.
 
-Useful next milestones are model checkpointing, more dataset/iterator
-operations, and broader `torch.nn` coverage.
+Useful next milestones are checkpoint saving, more dataset/iterator operations,
+and broader `torch.nn` coverage.
 
 ## CUDA status
 
