@@ -39,8 +39,7 @@ pub struct Tensor {
 
 ///|
 fn import_torch_module() -> () -> PyModule? {
-  let torch_mod = @python.pyimport("torch", print_err=true)
-  fn() { torch_mod }
+  fn() { @python.pyimport("torch", print_err=true) }
 }
 
 ///|

@@ -1,4 +1,39 @@
 ///|
+/// Apply a linear projection without bias: `input @ weight.T`.
+pub fn linear_projection(
+  input~ : Tensor,
+  weight~ : Tensor,
+) -> Tensor raise TorchError {
+  let args = PyTuple::new(2)
+  args.set(0, input.obj)
+  args.set(1, weight.obj)
+  expect_tensor(
+    invoke(
+      get_module_function(get_functional_module(), "linear"),
+      args,
+      "nn.functional.linear",
+    ),
+    "nn.functional.linear",
+  )
+}
+
+///|
+/// Look up token embeddings by integer token IDs.
+pub fn embedding(weight~ : Tensor, input~ : Tensor) -> Tensor raise TorchError {
+  let args = PyTuple::new(2)
+  args.set(0, input.obj)
+  args.set(1, weight.obj)
+  expect_tensor(
+    invoke(
+      get_module_function(get_functional_module(), "embedding"),
+      args,
+      "nn.functional.embedding",
+    ),
+    "nn.functional.embedding",
+  )
+}
+
+///|
 pub fn silu(input~ : Tensor) -> Tensor raise TorchError {
   let functional = get_functional_module()
   let args = PyTuple::new(1)

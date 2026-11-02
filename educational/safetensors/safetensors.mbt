@@ -38,6 +38,21 @@
 /// Q: why not just save Float32 but instead of save two BF16?
 
 ///|
+/// Storage data types supported by this educational reader.
+pub enum DType {
+  BF16
+}
+
+///|
+impl FromJson for DType with fn from_json(json, path) {
+  let value : String = @json.from_json(json, path~)
+  match value {
+    "bfloat16" | "BF16" => BF16
+    _ => raise @json.JsonDecodeError((path, "unsupported dtype \"\{value}\""))
+  }
+}
+
+///|
 pub(all) suberror SafeTensorsError {
   InvalidFormat(String)
   UnknowTensor(String)
@@ -69,10 +84,10 @@ priv struct TensorHeaderEntry {
 priv struct TensorOffsets {
   start : Int32
   end : Int32
-} derive(Eq, Debug)
+}
 
 ///|
-struct SafeTensorsHeader {
+priv struct SafeTensorsHeader {
   entries : Map[String, TensorHeaderEntry]
   // each TensorHeaderEntry's data_offsets is relative to data_start_at
   data_start_at : Int32
@@ -82,7 +97,7 @@ struct SafeTensorsHeader {
 fn TensorHeaderEntry::to_tensor_info(
   entry : Self,
   data_start_at~ : Int32,
-) -> TensorInfo raise SafeTensorsError {
+) -> TensorInfo {
   let begin = data_start_at + entry.data_offsets.start
   let end = data_start_at + entry.data_offsets.end
 
@@ -158,21 +173,19 @@ pub fn SafeTensors::tensor_names(self : SafeTensors) -> Array[String] {
 }
 
 ///|
-/// Read one tensor lazily and return an owned F32 tensor with validated shape.
+/// Read one tensor lazily and return its F32 values together with its shape.
 ///
 /// Only the tensor's byte range is read from disk. BF16 values are converted to
 /// F32 by shifting their bits left by 16 and reinterpreting the result as `Float`.
 pub async fn SafeTensors::tensor_f32(
   self : SafeTensors,
   name : String,
-) -> Tensor raise SafeTensorsError {
+) -> (Array[Float], Array[Int32]) raise SafeTensorsError {
   guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
 
   let bytes = self.tensor_bytes(name)
-  let values = bf16_bytes_to_f32(bytes).map(Float::to_double)
-  @torch.tensor(data=values, shape=tensor.shape) catch {
-    e => raise InvalidFormat("failed to construct tensor \{name}: \{e}")
-  }
+  let values = bf16_bytes_to_f32(bytes)
+  (values, tensor.shape)
 }
 
 ///|

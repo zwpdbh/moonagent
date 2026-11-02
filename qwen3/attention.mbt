@@ -40,7 +40,7 @@ fn scaled_dot_product_attention(
 
 ///|
 /// Apply RoPE to one head's query or key vector.
-fn apply_rope(
+pub fn apply_rope(
   input~ : Tensor,
   position~ : Int32,
   rope_theta~ : Float,
@@ -91,9 +91,6 @@ fn apply_rope(
 ///|
 priv struct GqaDimensions {
   num_query_heads : Int32
-  num_key_value_heads : Int32
-  sequence_length : Int32
-  head_dim : Int32
   group_size : Int32
 }
 
@@ -133,13 +130,7 @@ fn validate_gqa_inputs(
     abort("GQA query heads must be divisible by KV heads")
   }
   let group_size = num_query_heads / num_key_value_heads
-  {
-    num_query_heads,
-    num_key_value_heads,
-    sequence_length,
-    head_dim,
-    group_size,
-  }
+  { num_query_heads, group_size, }
 }
 
 ///|
@@ -148,7 +139,7 @@ fn validate_gqa_inputs(
 /// keys:    [num_key_value_heads, sequence_length, head_dim]
 /// values:  [num_key_value_heads, sequence_length, head_dim]
 /// output:  [num_query_heads * head_dim]
-fn grouped_query_attention(
+pub fn grouped_query_attention(
   queries~ : Tensor,
   keys~ : Tensor,
   values~ : Tensor,

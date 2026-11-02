@@ -4,7 +4,7 @@ pub(all) suberror ConfigError {
 }
 
 ///|
-struct Config {
+pub struct Config {
   architectures : Array[String]
   attention_bias : Bool
   attention_dropout : Float

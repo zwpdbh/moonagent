@@ -1,0 +1,11 @@
+warnings = "-unused_package"
+
+import {
+  "moonbitlang/core/json",
+  "moonbitlang/core/debug",
+  "moonbitlang/x/encoding",
+  "moonbitlang/async",
+  "moonbitlang/async/fs" @async_fs,
+}
+
+supported_targets = "native"

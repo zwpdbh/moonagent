@@ -1,5 +1,9 @@
-// import {
-//   "username/ch02" @lib,
-// }
+import {
+  "username/ch02" @lib,
+  "zw/torch",
+  "zw/qwen3",
+}
 
 pkgtype(kind: "executable")
+
+supported_targets = "native"

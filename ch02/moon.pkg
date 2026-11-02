@@ -1,0 +1,6 @@
+import {
+  "zw/torch",
+  "zw/qwen3",
+}
+
+supported_targets = "native"

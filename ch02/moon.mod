@@ -19,8 +19,13 @@ repository = ""
 
 license = "Apache-2.0"
 
-keywords = []
+keywords = [ ]
 
-preferred_target = "wasm"
+preferred_target = "native"
 
 description = ""
+
+import {
+  "zw/torch@0.1.0",
+  "zw/qwen3@0.1.0",
+}

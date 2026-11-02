@@ -4,5 +4,7 @@ members = [
   "./qwen3",
   "./torch",
   "./torch_example",
+  "./ch02",
+  "./educational/safetensors",
   "../forked/python.mbt",
 ]

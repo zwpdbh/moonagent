@@ -30,11 +30,6 @@ pub(all) suberror TokenizerError {
 priv struct SpecialControlToken {
   id : Int32
   content : String
-  single_word : Bool
-  lstrip : Bool
-  rstrip : Bool
-  normalized : Bool
-  special : Bool
 } derive(FromJson)
 
 ///|
@@ -68,6 +63,7 @@ impl FromJson for QwenTokenizerModel with fn from_json(json, path) {
 /// Rules for splitting text before BPE.
 /// Mirror of the "pre_tokenizer" section — an externally-tagged enum:
 /// the JSON "type" field picks the variant.
+#warnings("-unused_constructor")
 priv enum PreTokenizer {
   // The key is when match on Sequence, it matches on Array of itself which 
   // then go further matching on Split and ByteLevel
@@ -382,7 +378,7 @@ fn Tokenizer::symbols_to_ids(
 fn bpe_merge(
   chars : Array[String],
   merges : Map[(String, String), Int32],
-) -> Array[String] raise TokenizerError {
+) -> Array[String] {
   if chars.length() < 2 {
     return chars
   }

@@ -1,8 +1,14 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "zw/torch"
 
+import {
+  "Kaida-Amethyst/python",
+}
+
 // Values
 pub fn add(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
+
+pub fn add_python_path(String) -> Unit raise TorchError
 
 pub fn argmax(input~ : Tensor, dim~ : Int32) -> Tensor raise TorchError
 
@@ -18,19 +24,33 @@ pub fn data_loader(dataset~ : TorchDataset, batch_size~ : Int32, shuffle~ : Bool
 
 pub fn dot(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
+pub fn embedding(weight~ : Tensor, input~ : Tensor) -> Tensor raise TorchError
+
 pub fn int_tensor(data~ : Array[Int64], shape~ : Array[Int32]) -> Tensor raise TorchError
 
 pub fn linear(in_features~ : Int32, out_features~ : Int32) -> TorchModule raise TorchError
 
+pub fn linear_projection(input~ : Tensor, weight~ : Tensor) -> Tensor raise TorchError
+
+pub fn load_safetensors(String) -> Map[String, Tensor] raise TorchError
+
 pub fn manual_seed(seed~ : Int64) -> Unit raise TorchError
+
+pub fn masked_fill(input~ : Tensor, mask~ : Tensor, value~ : Double) -> Tensor raise TorchError
 
 pub fn matmul(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
 pub fn mul(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
+pub fn narrow(input~ : Tensor, dim~ : Int32, start~ : Int32, length~ : Int32) -> Tensor raise TorchError
+
+pub fn ones(Array[Int32], device~ : String) -> Tensor raise TorchError
+
 pub fn rand(Array[Int32]) -> Tensor raise TorchError
 
 pub fn relu() -> TorchModule raise TorchError
+
+pub fn repeat_interleave(input~ : Tensor, repeats~ : Int32, dim~ : Int32) -> Tensor raise TorchError
 
 pub fn rms_norm(input~ : Tensor, weight~ : Tensor, eps~ : Double) -> Tensor raise TorchError
 
@@ -52,6 +72,12 @@ pub fn tensor(data~ : Array[Double], shape~ : Array[Int32], requires_grad? : Boo
 
 pub fn tensor_dataset(features~ : Tensor, labels~ : Tensor) -> TorchDataset raise TorchError
 
+pub fn triu(input~ : Tensor, diagonal~ : Int32) -> Tensor raise TorchError
+
+pub fn unsqueeze(input~ : Tensor, dim~ : Int32) -> Tensor raise TorchError
+
+pub fn[T] without_grad(() -> T raise TorchError) -> T raise TorchError
+
 // Errors
 pub(all) suberror TorchError {
   ImportFailed(String)
@@ -68,9 +94,11 @@ pub impl Show for TorchError
 pub struct Tensor {
   // private fields
 }
+pub fn Tensor::as_python(Self) -> @python.PyObject
 pub fn Tensor::backward(Self) -> Unit raise TorchError
 pub fn Tensor::device(Self) -> String raise TorchError
 pub fn Tensor::dtype(Self) -> String raise TorchError
+pub fn Tensor::from_python(@python.PyObject) -> Self
 pub fn Tensor::grad(Self) -> Self raise TorchError
 pub fn Tensor::item(Self) -> Double raise TorchError
 pub fn Tensor::reshape(Self, Array[Int32]) -> Self raise TorchError
@@ -78,6 +106,7 @@ pub fn Tensor::shape(Self) -> Array[Int32] raise TorchError
 pub fn Tensor::t(Self) -> Self raise TorchError
 pub fn Tensor::to(Self, device~ : String) -> Self raise TorchError
 pub fn Tensor::to_array(Self) -> Array[Double] raise TorchError
+pub fn Tensor::to_dtype(Self, dtype~ : String) -> Self raise TorchError
 pub fn Tensor::transpose(Self, dim0~ : Int32, dim1~ : Int32) -> Self raise TorchError
 pub fn Tensor::view(Self, Array[Int32]) -> Self raise TorchError
 

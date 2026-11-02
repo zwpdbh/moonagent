@@ -2,24 +2,18 @@
 package "zw/qwen3"
 
 import {
-  "moonbitlang/core/debug",
   "zw/torch",
 }
 
 // Values
+pub fn apply_rope(input~ : @torch.Tensor, position~ : Int32, rope_theta~ : Float) -> @torch.Tensor raise @torch.TorchError
+
+pub fn grouped_query_attention(queries~ : @torch.Tensor, keys~ : @torch.Tensor, values~ : @torch.Tensor) -> @torch.Tensor raise @torch.TorchError
 
 // Errors
 pub(all) suberror ConfigError {
   InvalidFormat(String)
 }
-
-pub(all) suberror SafeTensorsError {
-  InvalidFormat(String)
-  UnknowTensor(String)
-  UnsupportedDtype(String)
-  DtypeNotMatch(String)
-} derive(@debug.Debug)
-pub fn SafeTensorsError::to_repr(Self) -> @debug.Repr
 
 pub(all) suberror TokenizerError {
   InvalidFormat(String)
@@ -31,18 +25,56 @@ pub(all) suberror TokenizerError {
 }
 
 // Types and methods
-type Config
+pub struct Config {
+  architectures : Array[String]
+  attention_bias : Bool
+  attention_dropout : Float
+  bos_token_id : Int32
+  eos_token_id : Int32
+  head_dim : Int32
+  hidden_act : String
+  hidden_size : Int32
+  initializer_range : Float
+  intermediate_size : Int32
+  max_position_embeddings : Int32
+  max_window_layers : Int32
+  model_type : String
+  num_attention_heads : Int32
+  num_hidden_layers : Int32
+  num_key_value_heads : Int32
+  rms_norm_eps : Float
+  rope_scaling : Int32?
+  rope_theta : Int32
+  sliding_window : Int32?
+  tie_word_embeddings : Bool
+  torch_dtype : DType
+  transformers_version : String
+  use_cache : Bool
+  use_sliding_window : Bool
+  vocab_size : Int32
+}
 
 pub enum DType {
   BF16
 }
 
-type SafeTensors
-pub async fn SafeTensors::load(String) -> Self raise SafeTensorsError
-pub async fn SafeTensors::tensor_f32(Self, String) -> @torch.Tensor raise SafeTensorsError
-pub fn SafeTensors::tensor_names(Self) -> Array[String]
+pub struct KVCache {
+  // private fields
+}
+pub fn KVCache::new(n_layers~ : Int32) -> Self
 
-type SafeTensorsHeader
+pub struct Qwen3Model {
+  config : Config
+  weights : Map[String, @torch.Tensor]
+  cos : @torch.Tensor
+  sin : @torch.Tensor
+  device : String
+  mut current_pos : Int32
+}
+pub fn Qwen3Model::forward(Self, input~ : @torch.Tensor, cache~ : KVCache?) -> @torch.Tensor raise @torch.TorchError
+pub fn Qwen3Model::load(String, device~ : String) -> Self raise @torch.TorchError
+pub fn Qwen3Model::new_cache(Self) -> KVCache
+pub fn Qwen3Model::reset_kv_cache(Self) -> Unit
 
 type Tokenizer
 pub fn Tokenizer::decode(Self, Array[Int32]) -> String raise TokenizerError

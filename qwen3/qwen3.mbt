@@ -1,2 +1,2 @@
 ///|
-using @torch {type Tensor}
+using @torch {type Tensor, type TorchError}
