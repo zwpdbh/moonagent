@@ -82,18 +82,26 @@ Run these commands from the workspace root:
 
 ```bash
 cd /home/zw/code/moonbit_programming/moonagent
-uv venv --python /usr/bin/python3.12 .venv
-uv pip install --python .venv/bin/python torch numpy
+uv venv --python /usr/bin/python3.12 --clear .venv
+uv pip install --python .venv/bin/python \
+  --index-url https://mirror.sjtu.edu.cn/pytorch-wheels/cu126 \
+  torch==2.13.0 numpy
 ```
 
-This installs PyTorch and NumPy only in `.venv`, leaving the system Python
-unchanged. `.venv/` is excluded by the repository's `.gitignore`.
+This installs the verified PyTorch 2.13.0 + CUDA 12.6 stack and NumPy only in
+`.venv`, leaving the system Python unchanged. The SJTU mirror can substantially
+speed up downloads in China. To use the official PyTorch repository instead,
+replace the mirror URL with `https://download.pytorch.org/whl/cu126`. `.venv/`
+is excluded by the repository's `.gitignore`.
 
-Verify the installation without GPU initialization:
+Verify the installation and CUDA detection:
 
 ```bash
-.venv/bin/python -c 'import torch; print(torch.__version__)'
+.venv/bin/python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available())'
 ```
+
+The expected output is `2.13.0+cu126` followed by `True` on a compatible NVIDIA
+system.
 
 ## 3. Make the environment visible to embedded CPython
 
@@ -212,8 +220,12 @@ entropy, `backward`, and access to `.grad`.
 
 ## CUDA status
 
-The host detects an NVIDIA GeForce RTX 3090. However, with the currently
-installed `torch 2.15.0+cu132` build, calling `torch.cuda.is_available()` causes
-a segmentation fault even in plain Python. CUDA execution is therefore not yet
-verified, and this issue is outside the MoonBit wrapper: the article-based CPU
-tests pass through the complete MoonBit-to-PyTorch path.
+PyTorch `2.13.0+cu126` is verified on the host's NVIDIA GeForce RTX 3090.
+`torch.cuda.is_available()` returns `True`, and an actual CUDA matrix
+multiplication produced the expected `[[14, 32], [32, 77]]` result.
+
+The previously tested `torch 2.15.0+cu132` build segfaulted during CUDA
+detection. Rebuilding `.venv` cleanly with the CUDA 12.6 stack resolved that
+issue. GPU verification currently uses plain Python because device transfer is
+not wrapped by `zw/torch` yet; the article-based MoonBit tests exercise CPU
+tensors.
