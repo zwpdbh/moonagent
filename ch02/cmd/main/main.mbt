@@ -7,13 +7,16 @@ fn main {
     }
   }
   match command {
-    Some(Ex00(text~)) => run_ex00(text) catch { error => println(error) }
+    Some(Ex00) => println("Ex00 placeholder")
+    Some(Ex01(text~)) => run_ex01(text) catch { error => println(error) }
+    Some(Ex03(Case01)) => println("Ex03 Case01 placeholder")
+    Some(Ex03(Case02(input~))) => println("Ex03 Case02 placeholder: \{input}")
     None => println("No subcommand selected; use --help for usage")
   }
 }
 
 ///|
-fn run_ex00(text : String) -> Unit raise @clap.ParserError {
+fn run_ex01(text : String) -> Unit raise @clap.ParserError {
   let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
   @torch.add_python_path(
     "/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages",

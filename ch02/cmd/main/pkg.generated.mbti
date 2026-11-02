@@ -14,7 +14,14 @@ pub fn parse_args() -> Command? raise @clap.ParserError
 type AppArgs
 
 pub enum Command {
-  Ex00(text~ : String)
+  Ex00
+  Ex01(text~ : String)
+  Ex03(SubCommand)
+}
+
+pub enum SubCommand {
+  Case01
+  Case02(input~ : String)
 }
 
 // Type aliases
