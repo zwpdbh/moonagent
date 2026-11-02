@@ -2,7 +2,8 @@ import {
   "username/ch02" @lib,
   "zw/torch",
   "zw/qwen3",
-  "zw/utils",
+  "TheWaWaR/clap",
+  "moonbitlang/core/env",
 }
 
 pkgtype(kind: "executable")

@@ -7,4 +7,5 @@ members = [
   "./ch02",
   "./educational/safetensors",
   "../forked/python.mbt",
+  "../forked/clap.mbt",
 ]

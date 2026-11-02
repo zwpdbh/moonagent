@@ -1,11 +1,21 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "username/ch02/cmd/main"
 
+import {
+  "TheWaWaR/clap",
+}
+
 // Values
+pub fn parse_args() -> Command? raise @clap.ParserError
 
 // Errors
 
 // Types and methods
+type AppArgs
+
+pub enum Command {
+  Ex00(text~ : String)
+}
 
 // Type aliases
 
