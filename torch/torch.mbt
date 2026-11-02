@@ -18,6 +18,21 @@ pub(all) suberror TorchError {
 }
 
 ///|
+pub impl Show for TorchError with fn output(self, logger) {
+  let (kind, message) = match self {
+    ImportFailed(message) => ("import failed", message)
+    AttributeMissing(message) => ("attribute missing", message)
+    CallFailed(message) => ("call failed", message)
+    UnexpectedType(message) => ("unexpected type", message)
+    InvalidShape(message) => ("invalid shape", message)
+  }
+  logger.write_string("\{kind}: \{message}")
+}
+
+///|
+pub extend TorchError with Show::{to_string, output}
+
+///|
 pub struct TorchTensor {
   priv obj : PyObject
 }
@@ -54,18 +69,50 @@ fn get_method(object : PyObject, name : String) -> PyCallable raise TorchError {
 }
 
 ///|
+fn invoke_optional(
+  callable : PyCallable,
+  args : PyTuple,
+  kwargs : @python.PyDict,
+  name : String,
+) -> PyObjectEnum? raise TorchError {
+  callable.invoke(args~, kwargs~, print_err=true) catch {
+    _ => raise CallFailed(name)
+  }
+}
+
+///|
 fn invoke(
   callable : PyCallable,
   args : PyTuple,
   name : String,
 ) -> PyObjectEnum raise TorchError {
-  let result = callable.invoke(args~, print_err=true) catch {
-    _ => raise CallFailed(name)
-  }
-  guard result is Some(value) else {
+  guard invoke_optional(callable, args, @python.PyDict::new(), name)
+    is Some(value) else {
     raise UnexpectedType("\{name} returned None")
   }
   value
+}
+
+///|
+fn invoke_with_kwargs(
+  callable : PyCallable,
+  args : PyTuple,
+  kwargs : @python.PyDict,
+  name : String,
+) -> PyObjectEnum raise TorchError {
+  guard invoke_optional(callable, args, kwargs, name) is Some(value) else {
+    raise UnexpectedType("\{name} returned None")
+  }
+  value
+}
+
+///|
+fn invoke_unit(
+  callable : PyCallable,
+  args : PyTuple,
+  name : String,
+) -> Unit raise TorchError {
+  ignore(invoke_optional(callable, args, @python.PyDict::new(), name))
 }
 
 ///|
@@ -113,11 +160,39 @@ fn TorchTensor::call(
 pub fn tensor(
   data~ : Array[Double],
   shape~ : Array[Int32],
+  requires_grad~ : Bool = false,
 ) -> TorchTensor raise TorchError {
   if data.length() != shape_size(shape) {
     raise InvalidShape("data length does not match tensor shape")
   }
   let values = PyList::from(data.map(@python.PyFloat::from))
+  let args = PyTuple::new(1)
+  args.set(0, values)
+  let result = expect_tensor(
+    invoke(get_torch_function("tensor"), args, "torch.tensor"),
+    "torch.tensor",
+  ).reshape(shape)
+  if requires_grad {
+    let grad_args = PyTuple::new(1)
+    grad_args.set(0, @python.PyBool::from(true))
+    expect_tensor(
+      result.call("requires_grad_", grad_args),
+      "Tensor.requires_grad_",
+    )
+  } else {
+    result
+  }
+}
+
+///|
+pub fn int_tensor(
+  data~ : Array[Int64],
+  shape~ : Array[Int32],
+) -> TorchTensor raise TorchError {
+  if data.length() != shape_size(shape) {
+    raise InvalidShape("data length does not match tensor shape")
+  }
+  let values = PyList::from(data.map(@python.PyInteger::from))
   let args = PyTuple::new(1)
   args.set(0, values)
   expect_tensor(

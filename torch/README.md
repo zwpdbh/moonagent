@@ -260,8 +260,7 @@ kept distinct.
 
 ## Tests
 
-`torch/torch_test.mbt` currently checks examples from sections 2.1–2.3 of the
-article:
+`torch/torch_test.mbt` checks examples from sections 2.1–2.3 of the article:
 
 - Creating scalar, vector, matrix, and 3D tensors.
 - Reading shapes and the default `torch.float32` dtype.
@@ -273,29 +272,57 @@ article:
 These tests exercise real calls through MoonBit, `python.mbt`, CPython, and
 PyTorch rather than comparing against a mock implementation.
 
+## Training example
+
+`torch_example/training.mbt` ports the article's neural-network and training
+sections. It builds the same `Linear → ReLU → Linear → ReLU → Linear`
+architecture, uses the five-example toy dataset, and trains with mini-batches,
+cross-entropy loss, and SGD. It also computes train/test accuracy and supports
+CPU or CUDA devices.
+
+The example uses PyTorch's `TensorDataset`, which is equivalent to the article's
+custom in-memory `ToyDataset` for this use case. `TorchDataLoader.batches()`
+materializes one epoch as MoonBit batches so the training loop can use ordinary
+MoonBit `for` loops.
+
+Run the example from the workspace root after setting up Python as described
+above:
+
+```bash
+cd /home/zw/code/moonbit_programming/moonagent/torch_example
+PYTHONPATH=/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages \
+  moon run cmd/main --target native
+```
+
+`torch_example/training_test.mbt` adds further article-based checks:
+
+- The logistic-regression autograd example and its weight/bias gradients.
+- Three training epochs, decreasing loss, and 100% train/test accuracy.
+- Tensor addition on CUDA when a GPU is available.
+- A CUDA training epoch when a GPU is available.
+
 ## Current limitations and next steps
 
 - The wrapper is native-only and requires CPython plus an installed PyTorch
   package.
-- Tensor construction currently accepts `Array[Double]`, which PyTorch receives
-  as Python floats and converts to its default `float32` tensors.
+- Floating-point tensor construction accepts `Array[Double]`; integer labels
+  use `int_tensor` with `Array[Int64]`.
 - Array/list conversion copies data. There is no zero-copy buffer integration.
-- Autograd, `torch.nn`, data loaders, training loops, model serialization, and
-  device transfer are not wrapped yet.
-- The article-based tests currently exercise CPU tensors.
+- Models use wrapped `torch.nn.Sequential` modules rather than MoonBit-defined
+  subclasses of `torch.nn.Module`.
+- Model serialization and distributed/multi-GPU training are not wrapped yet.
 
-A useful next milestone is the article's automatic-differentiation example:
-support `requires_grad`, arithmetic operations, `sigmoid`, binary cross
-entropy, `backward`, and access to `.grad`.
+Useful next milestones are model checkpointing, more dataset/iterator
+operations, and broader `torch.nn` coverage.
 
 ## CUDA status
 
 PyTorch `2.13.0+cu126` is verified on the host's NVIDIA GeForce RTX 3090.
 `torch.cuda.is_available()` returns `True`, and an actual CUDA matrix
-multiplication produced the expected `[[14, 32], [32, 77]]` result.
+multiplication produced the expected `[[14, 32], [32, 77]]` result. The
+MoonBit integration tests also verify CUDA tensor addition and a CUDA training
+epoch through `zw/torch`.
 
 The previously tested `torch 2.15.0+cu132` build segfaulted during CUDA
 detection. Rebuilding `.venv` cleanly with the CUDA 12.6 stack resolved that
-issue. GPU verification currently uses plain Python because device transfer is
-not wrapped by `zw/torch` yet; the article-based MoonBit tests exercise CPU
-tensors.
+issue.

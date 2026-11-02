@@ -1,7 +1,10 @@
 ///|
-/// Entry point for the CLI or runnable program in this template.
-/// Keep main focused; move logic into the library package.
-/// Run with `moon run cmd/main` from the project root.
 fn main {
-  println("Hello")
+  let result = @torch_example.train_toy_classifier() catch { _ => panic() }
+  println("device: \{result.device}")
+  for index, loss in result.losses {
+    println("batch \{index} loss: \{loss}")
+  }
+  println("train accuracy: \{result.train_accuracy}")
+  println("test accuracy: \{result.test_accuracy}")
 }

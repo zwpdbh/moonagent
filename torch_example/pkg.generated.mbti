@@ -1,11 +1,26 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "username/torch_example"
+package "zw/torch_example"
+
+import {
+  "zw/torch",
+}
 
 // Values
+pub fn compute_accuracy(@torch.TorchModule, @torch.TorchDataLoader, device~ : String) -> Double raise @torch.TorchError
+
+pub fn neural_network(num_inputs~ : Int32, num_outputs~ : Int32) -> @torch.TorchModule raise @torch.TorchError
+
+pub fn train_toy_classifier(device? : String, epochs? : Int32) -> TrainingResult raise @torch.TorchError
 
 // Errors
 
 // Types and methods
+pub(all) struct TrainingResult {
+  losses : Array[Double]
+  train_accuracy : Double
+  test_accuracy : Double
+  device : String
+}
 
 // Type aliases
 

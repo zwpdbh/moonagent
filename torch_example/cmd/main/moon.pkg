@@ -1,5 +1,7 @@
-// import {
-//   "username/torch_example" @lib,
-// }
+import {
+  "zw/torch_example",
+}
 
 pkgtype(kind: "executable")
+
+supported_targets = "native"
