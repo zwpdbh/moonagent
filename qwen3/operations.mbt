@@ -1,5 +1,5 @@
 ///|
-/// This file contains basic tensor operations
+/// Basic tensor operations for Qwen3, backed by PyTorch.
 /// embedding lookup
 /// matrix multiplication / linear projection
 /// RMS normalization
@@ -13,11 +13,14 @@
 /// end = start + hidden_size
 /// "Hidden Size" means the number of Float values used to represent one token insize the model.
 /// Some token id -> 1024 Float values
-fn embedding_lookup(weights~ : TensorView, token_id~ : Int32) -> TensorView {
-  if weights.rank() != 2 {
+fn embedding_lookup(
+  weights~ : TorchTensor,
+  token_id~ : Int32,
+) -> TorchTensor raise @torch.TorchError {
+  if weights.shape().length() != 2 {
     abort("embedding weights must be a rank-2 tensor")
   }
-  weights.slice_first_axis(token_id)
+  @torch.select(input=weights, dim=0, index=token_id)
 }
 
 ///|
@@ -29,65 +32,76 @@ fn embedding_lookup(weights~ : TensorView, token_id~ : Int32) -> TensorView {
 /// after the final decoder layer.
 /// The 'eps' is a small positive number added for numerical stability.
 /// In short: epsilon protects the division without significantly changing normal RMSNorm behavior.
-fn rms_norm(input~ : TensorView, weight~ : TensorView, eps~ : Float) -> Tensor {
-  if input.rank() != 1 || weight.rank() != 1 || input.shape != weight.shape {
+fn rms_norm(
+  input~ : TorchTensor,
+  weight~ : TorchTensor,
+  eps~ : Float,
+) -> TorchTensor raise @torch.TorchError {
+  if input.shape().length() != 1 || input.shape() != weight.shape() {
     abort("RMSNorm input and weight must be vectors with the same shape")
   }
-  if input.data.length() == 0 {
+  if input.shape()[0] == 0 {
     abort("RMSNorm input must not be empty")
   }
   if eps < 0.0 {
     abort("RMSNorm epsilon must not be negative")
   }
-  let sum_of_squares = input.data.fold(init=0.0F, (sum, value) => {
-    sum + value * value
-  })
-  let mean_square = sum_of_squares / Float::from_int(input.data.length())
-  let inverse_rms = 1.0F / (mean_square + eps).sqrt()
-  let data = input.data.mapi((i, value) => value * inverse_rms * weight.data[i])
-  Tensor::new(data~, shape=input.shape)
+  @torch.rms_norm(input~, weight~, eps=eps.to_double())
 }
 
 ///|
 /// Multiply an input vector by a learned weight matrix.
 /// Weight shape is `[out_features, in_features]`; output shape is
 /// `[out_features]`.
-fn linear(input~ : TensorView, weight~ : TensorView) -> Tensor {
-  @tensor.mat_vec_mul(matrix=weight, vector=input)
+fn linear(
+  input~ : TorchTensor,
+  weight~ : TorchTensor,
+) -> TorchTensor raise @torch.TorchError {
+  @torch.matmul(left=weight, right=input)
+}
+
+///|
+fn softmax(
+  input~ : TorchTensor,
+  dim~ : Int32,
+) -> TorchTensor raise @torch.TorchError {
+  let shape = input.shape()
+  if shape.length() != 1 || shape[0] == 0 {
+    abort("softmax input must be a non-empty vector")
+  }
+  @torch.softmax(input~, dim~)
 }
 
 ///|
 /// SiLU activation (Sigmoid Linear Unit)
 /// It is used in every MLP block
-fn silu(input~ : TensorView) -> Tensor {
-  let data = input.data.map(value => value / (1.0F + @math.expf(-value)))
-  Tensor::new(data~, shape=input.shape)
+fn silu(input~ : TorchTensor) -> TorchTensor raise @torch.TorchError {
+  @torch.silu(input~)
 }
 
 ///|
 /// Element-wise multiplication
-fn elementwise_mul(left~ : TensorView, right~ : TensorView) -> Tensor {
-  if left.shape != right.shape {
+fn elementwise_mul(
+  left~ : TorchTensor,
+  right~ : TorchTensor,
+) -> TorchTensor raise @torch.TorchError {
+  if left.shape() != right.shape() {
     abort("element-wise multiplication requires equal shapes")
   }
-  let data = left.data.mapi((index, value) => value * right.data[index])
-  Tensor::new(data~, shape=left.shape)
+  @torch.mul(left~, right~)
 }
 
 ///|
 /// Qwen3 gated MLP: down_proj(SiLU(gate_proj(input)) * up_proj(input)).
 fn mlp(
-  input~ : TensorView,
-  gate_weight~ : TensorView,
-  up_weight~ : TensorView,
-  down_weight~ : TensorView,
-) -> Tensor {
+  input~ : TorchTensor,
+  gate_weight~ : TorchTensor,
+  up_weight~ : TorchTensor,
+  down_weight~ : TorchTensor,
+) -> TorchTensor raise @torch.TorchError {
   let gate_projection = linear(input~, weight=gate_weight)
-  let activated_gate = silu(input=gate_projection.view())
+  let activated_gate = silu(input=gate_projection)
   let up_projection = linear(input~, weight=up_weight)
-  let gated = elementwise_mul(
-    left=activated_gate.view(),
-    right=up_projection.view(),
-  )
-  linear(input=gated.view(), weight=down_weight)
+  let gated = elementwise_mul(left=activated_gate, right=up_projection)
+  linear(input=gated, weight=down_weight)
 }

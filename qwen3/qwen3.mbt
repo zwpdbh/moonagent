@@ -1,2 +1,2 @@
 ///|
-using @tensor {type Tensor, type TensorView}
+using @torch {type TorchTensor}

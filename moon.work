@@ -2,7 +2,6 @@ members = [
   "./playground",
   "./utils",
   "./qwen3",
-  "./tensor",
   "./torch",
   "./torch_example",
   "../forked/python.mbt",

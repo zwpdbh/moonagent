@@ -3,7 +3,7 @@ package "zw/qwen3"
 
 import {
   "moonbitlang/core/debug",
-  "zw/tensor",
+  "zw/torch",
 }
 
 // Values
@@ -39,7 +39,7 @@ pub enum DType {
 
 type SafeTensors
 pub async fn SafeTensors::load(String) -> Self raise SafeTensorsError
-pub async fn SafeTensors::tensor_f32(Self, String) -> @tensor.Tensor raise SafeTensorsError
+pub async fn SafeTensors::tensor_f32(Self, String) -> @torch.TorchTensor raise SafeTensorsError
 pub fn SafeTensors::tensor_names(Self) -> Array[String]
 
 type SafeTensorsHeader

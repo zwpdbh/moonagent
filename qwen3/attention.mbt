@@ -1,69 +1,55 @@
 ///|
-/// Calculate attention from query and key vectors
-/// query:           [head_dim]
-/// keys:            [sequence_length, head_dim], flattened
-/// values:          [sequence_length, head_dim], flattened
-/// sequence_length: number of cached positions, including the current token
-/// It means how many token positions have been processed in the current context
-/// head_dim:        size of each query/key/value vector in this head
-/// return:          [head_dim]
-/// The problem it tries to solve: vanishing gradient problem.
-/// Variance is exploding due to high dimension. and Variance Scaling Rule
-/// tell us the when you multiple a variable by C, its variance is C squared.
+/// Calculate attention from query and key vectors using PyTorch.
+/// query:  [head_dim]
+/// keys:   [sequence_length, head_dim]
+/// values: [sequence_length, head_dim]
+/// return: [head_dim]
 fn scaled_dot_product_attention(
-  query~ : TensorView,
-  keys~ : TensorView,
-  values~ : TensorView,
-) -> Tensor {
-  if query.rank() != 1 || keys.rank() != 2 || values.rank() != 2 {
+  query~ : TorchTensor,
+  keys~ : TorchTensor,
+  values~ : TorchTensor,
+) -> TorchTensor raise @torch.TorchError {
+  let query_shape = query.shape()
+  let keys_shape = keys.shape()
+  let values_shape = values.shape()
+  if query_shape.length() != 1 ||
+    keys_shape.length() != 2 ||
+    values_shape.length() != 2 {
     abort("attention expects a query vector and key/value matrices")
   }
-  if keys.shape != values.shape {
+  if keys_shape != values_shape {
     abort("attention keys and values must have the same shape")
   }
-  let sequence_length = keys.dim(0)
-  let head_dim = keys.dim(1)
+  let sequence_length = keys_shape[0]
+  let head_dim = keys_shape[1]
   if sequence_length == 0 || head_dim == 0 {
     abort("attention sequence length and head dimension must be positive")
   }
-  if query.dim(0) != head_dim {
+  if query_shape[0] != head_dim {
     abort("attention query length must equal head dimension")
   }
 
-  let scale = Float::from_int(head_dim).sqrt()
-  let scores = @tensor.mat_vec_mul(matrix=keys, vector=query)
-  let scaled_scores = Tensor::new(
-    data=scores.data.map(score => score / scale),
-    shape=scores.shape,
+  let scores = @torch.matmul(left=keys, right=query)
+  let scaled_scores = @torch.scale(
+    input=scores,
+    scalar=1.0 / head_dim.to_double().sqrt(),
   )
-  let attention_weights = @tensor.softmax(input=scaled_scores.view())
-
-  @tensor.vec_mat_mul(vector=attention_weights.view(), matrix=values)
+  let attention_weights = softmax(input=scaled_scores, dim=0)
+  @torch.matmul(left=attention_weights, right=values)
 }
 
 ///|
-/// RoPE (Rotary Positional Encoding).
-/// It is applied to 
-/// - the query vector,
-/// - each key vector before storing it in the KV cache
-/// 
-/// `input` is one head’s query or key vector of length head_dim
-/// `position` is the token's absolute position in the sequence
-/// `rope_theta` comes from `Config.rope_theta`— Qwen3 uses 1000000
-/// Q and A ===
-/// What is the token's absolute position? Token position is the position in the array of token IDs produced by the tokenizer
-/// What is pair's index
-/// How to find the head_dim? is it the width (columns) of the weight matrix?
-///  
+/// Apply RoPE to one head's query or key vector.
 fn apply_rope(
-  input~ : TensorView,
+  input~ : TorchTensor,
   position~ : Int32,
   rope_theta~ : Float,
-) -> Tensor {
-  if input.rank() != 1 {
+) -> TorchTensor raise @torch.TorchError {
+  let input_shape = input.shape()
+  if input_shape.length() != 1 {
     abort("RoPE input must be one head vector")
   }
-  let head_dim = input.dim(0)
+  let head_dim = input_shape[0]
   if head_dim == 0 || head_dim % 2 != 0 {
     abort("RoPE head dimension must be positive and even")
   }
@@ -77,16 +63,13 @@ fn apply_rope(
   let half_dim = head_dim / 2
   let position_float = Float::from_int(position)
   let head_dim_float = Float::from_int(head_dim)
-
   let rotations = Array::makei(half_dim, pair_index => {
     let exponent = Float::from_int(2 * pair_index) / head_dim_float
-
     let frequency = 1.0F / @math.powf(rope_theta, exponent)
     let angle = position_float * frequency
-
     (@math.cosf(angle), @math.sinf(angle))
   })
-
+  let input_data = input.to_array()
   let data = Array::makei(head_dim, dimension => {
     let pair_index = if dimension < half_dim {
       dimension
@@ -94,15 +77,15 @@ fn apply_rope(
       dimension - half_dim
     }
     let (cosine, sine) = rotations[pair_index]
-    let first = input.data[pair_index]
-    let second = input.data[pair_index + half_dim]
+    let first = input_data[pair_index]
+    let second = input_data[pair_index + half_dim]
     if dimension < half_dim {
-      first * cosine - second * sine
+      first * cosine.to_double() - second * sine.to_double()
     } else {
-      first * sine + second * cosine
+      first * sine.to_double() + second * cosine.to_double()
     }
   })
-  Tensor::new(data~, shape=input.shape)
+  @torch.tensor(data~, shape=input_shape)
 }
 
 ///|
@@ -117,28 +100,33 @@ priv struct GqaDimensions {
 ///|
 /// Validate GQA inputs once and derive all dimensions needed by the computation.
 fn validate_gqa_inputs(
-  queries : TensorView,
-  keys : TensorView,
-  values : TensorView,
-) -> GqaDimensions {
-  if queries.rank() != 2 || keys.rank() != 3 || values.rank() != 3 {
+  queries : TorchTensor,
+  keys : TorchTensor,
+  values : TorchTensor,
+) -> GqaDimensions raise @torch.TorchError {
+  let queries_shape = queries.shape()
+  let keys_shape = keys.shape()
+  let values_shape = values.shape()
+  if queries_shape.length() != 2 ||
+    keys_shape.length() != 3 ||
+    values_shape.length() != 3 {
     abort("GQA expects rank-2 queries and rank-3 keys/values")
   }
-  if keys.shape != values.shape {
+  if keys_shape != values_shape {
     abort("GQA keys and values must have identical shapes")
   }
 
-  let num_query_heads = queries.dim(0)
-  let head_dim = queries.dim(1)
-  let num_key_value_heads = keys.dim(0)
-  let sequence_length = keys.dim(1)
+  let num_query_heads = queries_shape[0]
+  let head_dim = queries_shape[1]
+  let num_key_value_heads = keys_shape[0]
+  let sequence_length = keys_shape[1]
   if num_query_heads <= 0 ||
     num_key_value_heads <= 0 ||
     sequence_length <= 0 ||
     head_dim <= 0 {
     abort("GQA head counts, sequence length, and head_dim must be positive")
   }
-  if keys.dim(2) != head_dim {
+  if keys_shape[2] != head_dim {
     abort("GQA queries and KV caches must have matching head_dim")
   }
   if num_query_heads % num_key_value_heads != 0 {
@@ -155,145 +143,56 @@ fn validate_gqa_inputs(
 }
 
 ///|
-/// Run grouped-query attention(GQA) for one token and concatenate all head outputs.
-///
-/// Expected shapes:
-/// - queries: `[num_query_heads, head_dim]`
-/// - keys:    `[num_key_value_heads, sequence_length, head_dim]`
-/// - values:  `[num_key_value_heads, sequence_length, head_dim]`
-///
-/// Queries and keys must already have RoPE applied. Keys and values are
-/// head-major, so each KV head's complete sequence cache is contiguous.
-/// Each group of query heads shares one KV head. The output shape is
-/// `[num_query_heads * head_dim]`.
-/// 
-/// Each token generates query, key and value vector.
-/// Query: What is the token is seeking (what information it needs)
-/// Key: The information the token holds (how relevant it is to other tokens)
-/// Value: The actual content the token shares if its key is found relevant
-/// 
-/// These vectors are derived from the token's embedding through learned 
-/// transformations using weight matrices: 
-/// Wq(for queries)
-/// Wk(for keys)
-/// Wv(for values)
-/// 
-/// Each token has its query, key, and value vectors, the transformer follows a
-/// search-match-update process to determine which tokens provide the most relevant context:
-/// Use dot product between a token's query with other token's key to measure relevance.
-/// The similarity scores are passed through a softmax function to normalize them into
-/// attention weights. The transformer then compute a weighted sum of the value vectors 
-/// based on these attention weights.
+/// Run grouped-query attention for one token and concatenate all head outputs.
+/// queries: [num_query_heads, head_dim]
+/// keys:    [num_key_value_heads, sequence_length, head_dim]
+/// values:  [num_key_value_heads, sequence_length, head_dim]
+/// output:  [num_query_heads * head_dim]
 fn grouped_query_attention(
-  queries~ : TensorView,
-  keys~ : TensorView,
-  values~ : TensorView,
-) -> Tensor {
-  let dims : GqaDimensions = validate_gqa_inputs(queries, keys, values)
-
-  // 4. Create one output per query head. All shape checks have already passed,
-  //    so this loop only needs to select the shared KV head for each query head.
-  let head_outputs : Array[Tensor] = Array::makei(dims.num_query_heads, query_head_index => {
+  queries~ : TorchTensor,
+  keys~ : TorchTensor,
+  values~ : TorchTensor,
+) -> TorchTensor raise @torch.TorchError {
+  let dims = validate_gqa_inputs(queries, keys, values)
+  let head_outputs = Array::makei(dims.num_query_heads, query_head_index => {
     let kv_head_index = query_head_index / dims.group_size
-
-    // 5. Select the current head's inputs without copying:
-    let query = queries.slice_first_axis(query_head_index)
-    let head_keys = keys.slice_first_axis(kv_head_index)
-    let head_values = values.slice_first_axis(kv_head_index)
-
-    // 6. Call scaled_dot_product_attention with the selected views and return
-    //    its Tensor as this query head's output.
+    let query = @torch.select(input=queries, dim=0, index=query_head_index)
+    let head_keys = @torch.select(input=keys, dim=0, index=kv_head_index)
+    let head_values = @torch.select(input=values, dim=0, index=kv_head_index)
     scaled_dot_product_attention(query~, keys=head_keys, values=head_values)
   })
-
-  // 7. Concatenate head_outputs into one flat Array[Float] of length
-  //    dims.num_query_heads * dims.head_dim. For each flat output index:
-  //    head_index = flat_index / dims.head_dim
-  //    dimension  = flat_index % dims.head_dim
-  //    value      = head_outputs[head_index].data[dimension]
-  let concatenated_data = Array::makei(dims.num_query_heads * dims.head_dim, flat_index => {
-    let head_index = flat_index / dims.head_dim
-    let dimension = flat_index % dims.head_dim
-    head_outputs[head_index].data[dimension]
-  })
-
-  // 8. Return Tensor::new(data=concatenated_data,
-  //    shape=[dims.num_query_heads * dims.head_dim]).
-  Tensor::new(data=concatenated_data, shape=[
-    dims.num_query_heads * dims.head_dim,
-  ])
+  @torch.concat(head_outputs, dim=0)
 }
 
 ///|
 test "understanding query, key, value in transformers and LLMs" {
-  // Create the vector representations (embeddings) for each token
-  // These embeddings, as simplified vectors, represent how the tokens are encoded in the transformer model, 
-  // capturing their “meaning” for further computations:
-  let token_dog = Tensor::new(data=[1.0, -0.5, 0.2], shape=[3])
-  let token_plays = Tensor::new(data=[0.4, 0.1, 0.4], shape=[3])
-  let token_fetch = Tensor::new(data=[0.6, -0.8, 0.7], shape=[3])
+  let token_dog = @torch.tensor(data=[1.0, -0.5, 0.2], shape=[3])
+  let token_plays = @torch.tensor(data=[0.4, 0.1, 0.4], shape=[3])
+  let token_fetch = @torch.tensor(data=[0.6, -0.8, 0.7], shape=[3])
+  let w_q = @torch.rand([3, 3])
+  let w_k = @torch.rand([3, 3])
+  let w_v = @torch.rand([3, 3])
 
-  // Next, we create randomized weight matrices for the query, key, and value transformations.
-  // In a real transformer model, these weights are learned during training (and with way more layers).
-  let w_q = Tensor::rand([3, 3])
-  let w_k = Tensor::rand([3, 3])
-  let w_v = Tensor::rand([3, 3])
+  let query_plays = @torch.matmul(left=token_plays, right=w_q)
+  let key_dog = @torch.matmul(left=token_dog, right=w_k)
+  let value_dog = @torch.matmul(left=token_dog, right=w_v)
+  let key_fetch = @torch.matmul(left=token_fetch, right=w_k)
+  let value_fetch = @torch.matmul(left=token_fetch, right=w_v)
 
-  // Now we compute the query, key and value vectors for tokens.
-  // We will focus on "plays" as the querying token, seeking information
-  // from "dog" and "fetch".
-  // The query vector tells us what "plays" is seeking to understand.
-  // The key vectors for "dog" and "fetch" represent the information those tokens hold,
-  // and the value vectors represent the actal content those tokens will contribute if found relevant.
-
-  // "plays" is the querying token
-  let query_plays = @tensor.vec_mat_mul(
-    vector=token_plays.view(),
-    matrix=w_q.view(),
-  )
-
-  // compute key and value for "dog"
-  let key_dot = @tensor.vec_mat_mul(vector=token_dog.view(), matrix=w_k.view())
-  let value_dot = @tensor.vec_mat_mul(
-    vector=token_dog.view(),
-    matrix=w_v.view(),
-  )
-
-  // compute key and value for "fetch"
-  let key_fetch = @tensor.vec_mat_mul(
-    vector=token_fetch.view(),
-    matrix=w_k.view(),
-  )
-  let value_fetch = @tensor.vec_mat_mul(
-    vector=token_fetch.view(),
-    matrix=w_v.view(),
-  )
-
-  // To determine how relevant "dog" and "fetch" are to "plays", we calculate the similarity scores
-  // by taking the dot product between the query from "plays" and the keys of the other tokens.
-  // cals sim score for "plays" query to "dog" key 
-  let similarity_plays_dog = @tensor.dot(
-    left=query_plays.data,
-    right=key_dot.data,
-  )
-  // cals sim score for "plays" query to "fetch" key
-  let similarity_plays_fetch = @tensor.dot(
-    left=query_plays.data,
-    right=key_fetch.data,
-  )
-
-  // next use the softmax function to covert these similarity scores into attension weights.
-  // this weights determine how much attention "plays" should pay to "dog" and "fetch"
-  let similarity_score = Tensor::new(
+  let similarity_plays_dog = @torch.dot(left=query_plays, right=key_dog).item()
+  let similarity_plays_fetch = @torch.dot(left=query_plays, right=key_fetch).item()
+  let similarity_scores = @torch.tensor(
     data=[similarity_plays_dog, similarity_plays_fetch],
     shape=[2],
   )
-  let attention_weights = @tensor.softmax(input=similarity_score.view())
-
-  // using these attention weights, we compute the weighted sum of the value vector from "dog" and "fetch"
-  // to update the context for "plays"
-  let weighted_value_dog = value_dot.scale(attention_weights[0])
-  let weighted_value_fetch = value_fetch.scale(attention_weights[1])
-  let updated_context_plays = weighted_value_dog + weighted_value_fetch
-  // demo finished: from https://medium.com/ai-assimilating-intelligence/understanding-query-key-value-in-transformers-c579b93054cc
+  let attention_weights = @torch.softmax(input=similarity_scores, dim=0).to_array()
+  let weighted_value_dog = @torch.scale(
+    input=value_dog,
+    scalar=attention_weights[0],
+  )
+  let weighted_value_fetch = @torch.scale(
+    input=value_fetch,
+    scalar=attention_weights[1],
+  )
+  ignore(@torch.add(left=weighted_value_dog, right=weighted_value_fetch))
 }

@@ -31,7 +31,8 @@ Python's torch package
 `matmul`, `reshape`, and `transpose` execute inside PyTorch. MoonBit arrays and
 Python lists are currently converted by copying.
 
-The existing native `zw/tensor` package is separate from this experiment.
+The former native `zw/tensor` package has been removed. Qwen3 and the examples
+now use `TorchTensor` and real PyTorch operations through this package.
 
 ## Using the local `python.mbt` fork as a dependency
 

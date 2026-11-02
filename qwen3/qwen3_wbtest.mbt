@@ -3,23 +3,30 @@
 // Keep them focused; public behavior belongs in `_test.mbt`.
 
 ///|
-fn test_tensor(data : Array[Float], shape : Array[Int32]) -> @tensor.Tensor {
-  @tensor.Tensor::new(data~, shape~)
+fn test_tensor(
+  data : Array[Float],
+  shape : Array[Int32],
+) -> TorchTensor raise @torch.TorchError {
+  @torch.tensor(data=data.map(Float::to_double), shape~)
 }
 
 ///|
-fn test_vector(data : Array[Float]) -> @tensor.Tensor {
+fn test_vector(data : Array[Float]) -> TorchTensor raise @torch.TorchError {
   test_tensor(data, [data.length()])
 }
 
 ///|
 fn assert_tensor_eq(
-  actual : @tensor.Tensor,
+  actual : TorchTensor,
   data : Array[Float],
   shape : Array[Int32],
 ) -> Unit raise {
-  assert_eq(actual.data, data)
-  assert_eq(actual.shape, shape)
+  let actual_data = actual.to_array()
+  assert_eq(actual_data.length(), data.length())
+  for index, expected in data {
+    assert_true((actual_data[index] - expected.to_double()).abs() < 0.000001)
+  }
+  assert_eq(actual.shape(), shape)
 }
 
 ///|
@@ -358,20 +365,21 @@ test "TensorOffsets rejects non-array and wrong-length inputs" {
 ///|
 test "rms_norm normalizes input and applies learned weights" {
   let result = rms_norm(
-    input=test_vector([3.0, 4.0]).view(),
-    weight=test_vector([1.0, 0.5]).view(),
+    input=test_vector([3.0, 4.0]),
+    weight=test_vector([1.0, 0.5]),
     eps=0.0,
   )
-  assert_true((result.data[0] - 0.84852814).abs() < 0.000001)
-  assert_true((result.data[1] - 0.56568542).abs() < 0.000001)
-  assert_eq(result.shape, [2])
+  let data = result.to_array()
+  assert_true((data[0] - 0.84852814).abs() < 0.000001)
+  assert_true((data[1] - 0.56568542).abs() < 0.000001)
+  assert_eq(result.shape(), [2])
 }
 
 ///|
 test "rms_norm handles zero input with epsilon" {
   let result = rms_norm(
-    input=test_vector([0.0, 0.0]).view(),
-    weight=test_vector([1.0, 2.0]).view(),
+    input=test_vector([0.0, 0.0]),
+    weight=test_vector([1.0, 2.0]),
     eps=0.000001,
   )
   assert_tensor_eq(result, [0.0, 0.0], [2])
@@ -380,8 +388,8 @@ test "rms_norm handles zero input with epsilon" {
 ///|
 test "linear computes vector-matrix dot products" {
   let result = linear(
-    input=test_vector([1.0, 2.0, 3.0]).view(),
-    weight=test_tensor([1.0, 0.0, 0.0, 0.0, 1.0, 1.0], [2, 3]).view(),
+    input=test_vector([1.0, 2.0, 3.0]),
+    weight=test_tensor([1.0, 0.0, 0.0, 0.0, 1.0, 1.0], [2, 3]),
   )
   assert_tensor_eq(result, [1.0, 5.0], [2])
 }
@@ -389,38 +397,39 @@ test "linear computes vector-matrix dot products" {
 ///|
 test "linear returns one value per output row" {
   let result = linear(
-    input=test_vector([2.0, -1.0]).view(),
-    weight=test_tensor([1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [3, 2]).view(),
+    input=test_vector([2.0, -1.0]),
+    weight=test_tensor([1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [3, 2]),
   )
   assert_tensor_eq(result, [2.0, -1.0, 1.0], [3])
 }
 
 ///|
 test "softmax converts equal scores to equal weights" {
-  let result = @tensor.softmax(input=test_vector([0.0, 0.0]).view())
+  let result = softmax(input=test_vector([0.0, 0.0]), dim=0)
   assert_tensor_eq(result, [0.5, 0.5], [2])
 }
 
 ///|
 test "softmax produces normalized weights for large scores" {
-  let result = @tensor.softmax(input=test_vector([10000.0, 10001.0]).view())
-  assert_true((result.data[0] - 0.26894143).abs() < 0.000001)
-  assert_true((result.data[1] - 0.7310586).abs() < 0.000001)
-  let sum = result.data.fold(init=0.0F, (acc, value) => acc + value)
+  let result = softmax(input=test_vector([10000.0, 10001.0]), dim=0)
+  let data = result.to_array()
+  assert_true((data[0] - 0.26894143).abs() < 0.000001)
+  assert_true((data[1] - 0.7310586).abs() < 0.000001)
+  let sum = data.fold(init=0.0, (acc, value) => acc + value)
   assert_true((sum - 1.0).abs() < 0.000001)
 }
 
 ///|
 test "panic softmax rejects empty input" {
-  ignore(@tensor.softmax(input=test_vector([]).view()))
+  ignore(softmax(input=test_vector([]), dim=0))
 }
 
 ///|
 test "attention with one position returns that position's value" {
   let result = scaled_dot_product_attention(
-    query=test_vector([1.0, 0.0]).view(),
-    keys=test_tensor([2.0, 3.0], [1, 2]).view(),
-    values=test_tensor([4.0, 5.0], [1, 2]).view(),
+    query=test_vector([1.0, 0.0]),
+    keys=test_tensor([2.0, 3.0], [1, 2]),
+    values=test_tensor([4.0, 5.0], [1, 2]),
   )
   assert_tensor_eq(result, [4.0, 5.0], [2])
 }
@@ -428,9 +437,9 @@ test "attention with one position returns that position's value" {
 ///|
 test "attention with equal scores averages value vectors" {
   let result = scaled_dot_product_attention(
-    query=test_vector([0.0, 0.0]).view(),
-    keys=test_tensor([1.0, 2.0, 3.0, 4.0], [2, 2]).view(),
-    values=test_tensor([1.0, 2.0, 3.0, 4.0], [2, 2]).view(),
+    query=test_vector([0.0, 0.0]),
+    keys=test_tensor([1.0, 2.0, 3.0, 4.0], [2, 2]),
+    values=test_tensor([1.0, 2.0, 3.0, 4.0], [2, 2]),
   )
   assert_tensor_eq(result, [2.0, 3.0], [2])
 }
@@ -438,21 +447,21 @@ test "attention with equal scores averages value vectors" {
 ///|
 test "attention applies non-uniform weights to values" {
   let result = scaled_dot_product_attention(
-    query=test_vector([1.0]).view(),
-    keys=test_tensor([0.0, 1.0], [2, 1]).view(),
-    values=test_tensor([2.0, 4.0], [2, 1]).view(),
+    query=test_vector([1.0]),
+    keys=test_tensor([0.0, 1.0], [2, 1]),
+    values=test_tensor([2.0, 4.0], [2, 1]),
   )
-  assert_true((result.data[0] - 3.4621172).abs() < 0.000001)
-  assert_eq(result.shape, [1])
+  assert_true((result.item() - 3.4621172).abs() < 0.000001)
+  assert_eq(result.shape(), [1])
 }
 
 ///|
 test "panic attention rejects inconsistent cache shapes" {
   ignore(
     scaled_dot_product_attention(
-      query=test_vector([1.0]).view(),
-      keys=test_tensor([1.0], [1, 1]).view(),
-      values=test_tensor([1.0, 2.0], [1, 2]).view(),
+      query=test_vector([1.0]),
+      keys=test_tensor([1.0], [1, 1]),
+      values=test_tensor([1.0, 2.0], [1, 2]),
     ),
   )
 }
@@ -460,7 +469,7 @@ test "panic attention rejects inconsistent cache shapes" {
 ///|
 test "apply_rope leaves position zero unchanged" {
   let result = apply_rope(
-    input=test_vector([1.0, 2.0, 3.0, 4.0]).view(),
+    input=test_vector([1.0, 2.0, 3.0, 4.0]),
     position=0,
     rope_theta=1000000.0,
   )
@@ -470,32 +479,34 @@ test "apply_rope leaves position zero unchanged" {
 ///|
 test "apply_rope rotates a two-dimensional head" {
   let result = apply_rope(
-    input=test_vector([1.0, 0.0]).view(),
+    input=test_vector([1.0, 0.0]),
     position=1,
     rope_theta=10000.0,
   )
-  assert_true((result.data[0] - 0.5403023).abs() < 0.000001)
-  assert_true((result.data[1] - 0.84147096).abs() < 0.000001)
+  let data = result.to_array()
+  assert_true((data[0] - 0.5403023).abs() < 0.000001)
+  assert_true((data[1] - 0.84147096).abs() < 0.000001)
 }
 
 ///|
 test "apply_rope uses Qwen first-half second-half pairs" {
   let result = apply_rope(
-    input=test_vector([1.0, 0.0, 0.0, 1.0]).view(),
+    input=test_vector([1.0, 0.0, 0.0, 1.0]),
     position=1,
     rope_theta=10000.0,
   )
-  assert_true((result.data[0] - 0.5403023).abs() < 0.000001)
-  assert_true((result.data[1] + 0.009999833).abs() < 0.000001)
-  assert_true((result.data[2] - 0.84147096).abs() < 0.000001)
-  assert_true((result.data[3] - 0.99995).abs() < 0.000001)
+  let data = result.to_array()
+  assert_true((data[0] - 0.5403023).abs() < 0.000001)
+  assert_true((data[1] + 0.009999833).abs() < 0.000001)
+  assert_true((data[2] - 0.84147096).abs() < 0.000001)
+  assert_true((data[3] - 0.99995).abs() < 0.000001)
 }
 
 ///|
 test "panic apply_rope rejects an odd head dimension" {
   ignore(
     apply_rope(
-      input=test_vector([1.0, 2.0, 3.0]).view(),
+      input=test_vector([1.0, 2.0, 3.0]),
       position=0,
       rope_theta=10000.0,
     ),
@@ -505,9 +516,9 @@ test "panic apply_rope rejects an odd head dimension" {
 ///|
 test "validate_gqa_inputs derives dimensions and group size" {
   let dims = validate_gqa_inputs(
-    test_tensor(Array::make(8, 0.0F), [4, 2]).view(),
-    test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
-    test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
+    test_tensor(Array::make(8, 0.0F), [4, 2]),
+    test_tensor(Array::make(12, 0.0F), [2, 3, 2]),
+    test_tensor(Array::make(12, 0.0F), [2, 3, 2]),
   )
   assert_eq(dims.num_query_heads, 4)
   assert_eq(dims.num_key_value_heads, 2)
@@ -520,9 +531,9 @@ test "validate_gqa_inputs derives dimensions and group size" {
 test "panic validate_gqa_inputs rejects non-divisible head counts" {
   ignore(
     validate_gqa_inputs(
-      test_tensor(Array::make(6, 0.0F), [3, 2]).view(),
-      test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
-      test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
+      test_tensor(Array::make(6, 0.0F), [3, 2]),
+      test_tensor(Array::make(12, 0.0F), [2, 3, 2]),
+      test_tensor(Array::make(12, 0.0F), [2, 3, 2]),
     ),
   )
 }
@@ -530,9 +541,9 @@ test "panic validate_gqa_inputs rejects non-divisible head counts" {
 ///|
 test "grouped-query attention shares KV heads and concatenates outputs" {
   let result = grouped_query_attention(
-    queries=test_tensor(Array::make(4, 0.0F), [4, 1]).view(),
-    keys=test_tensor(Array::make(4, 0.0F), [2, 2, 1]).view(),
-    values=test_tensor([2.0, 4.0, 10.0, 20.0], [2, 2, 1]).view(),
+    queries=test_tensor(Array::make(4, 0.0F), [4, 1]),
+    keys=test_tensor(Array::make(4, 0.0F), [2, 2, 1]),
+    values=test_tensor([2.0, 4.0, 10.0, 20.0], [2, 2, 1]),
   )
   assert_tensor_eq(result, [3.0, 3.0, 15.0, 15.0], [4])
 }

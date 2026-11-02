@@ -1,5 +1,0 @@
-// import {
-//   "username/tensor" @lib,
-// }
-
-pkgtype(kind: "executable")

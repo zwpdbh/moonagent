@@ -165,13 +165,14 @@ pub fn SafeTensors::tensor_names(self : SafeTensors) -> Array[String] {
 pub async fn SafeTensors::tensor_f32(
   self : SafeTensors,
   name : String,
-) -> @tensor.Tensor raise SafeTensorsError {
+) -> TorchTensor raise SafeTensorsError {
   guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
 
   let bytes = self.tensor_bytes(name)
-  let values = bf16_bytes_to_f32(bytes)
-
-  @tensor.Tensor::new(data=values, shape=tensor.shape)
+  let values = bf16_bytes_to_f32(bytes).map(Float::to_double)
+  @torch.tensor(data=values, shape=tensor.shape) catch {
+    e => raise InvalidFormat("failed to construct tensor \{name}: \{e}")
+  }
 }
 
 ///|

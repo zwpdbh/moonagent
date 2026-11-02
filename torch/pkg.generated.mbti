@@ -8,11 +8,15 @@ pub fn argmax(input~ : TorchTensor, dim~ : Int32) -> TorchTensor raise TorchErro
 
 pub fn binary_cross_entropy(input~ : TorchTensor, target~ : TorchTensor) -> TorchTensor raise TorchError
 
+pub fn concat(Array[TorchTensor], dim~ : Int32) -> TorchTensor raise TorchError
+
 pub fn cross_entropy(input~ : TorchTensor, target~ : TorchTensor) -> TorchTensor raise TorchError
 
 pub fn cuda_is_available() -> Bool raise TorchError
 
 pub fn data_loader(dataset~ : TorchDataset, batch_size~ : Int32, shuffle~ : Bool, num_workers~ : Int32, drop_last~ : Bool) -> TorchDataLoader raise TorchError
+
+pub fn dot(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
 
 pub fn int_tensor(data~ : Array[Int64], shape~ : Array[Int32]) -> TorchTensor raise TorchError
 
@@ -24,13 +28,23 @@ pub fn matmul(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise To
 
 pub fn mul(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
 
+pub fn rand(Array[Int32]) -> TorchTensor raise TorchError
+
 pub fn relu() -> TorchModule raise TorchError
+
+pub fn rms_norm(input~ : TorchTensor, weight~ : TorchTensor, eps~ : Double) -> TorchTensor raise TorchError
+
+pub fn scale(input~ : TorchTensor, scalar~ : Double) -> TorchTensor raise TorchError
+
+pub fn select(input~ : TorchTensor, dim~ : Int32, index~ : Int32) -> TorchTensor raise TorchError
 
 pub fn sequential(Array[TorchModule]) -> TorchModule raise TorchError
 
 pub fn sgd(parameters~ : TorchParameters, learning_rate~ : Double) -> TorchOptimizer raise TorchError
 
 pub fn sigmoid(input~ : TorchTensor) -> TorchTensor raise TorchError
+
+pub fn silu(input~ : TorchTensor) -> TorchTensor raise TorchError
 
 pub fn softmax(input~ : TorchTensor, dim~ : Int32) -> TorchTensor raise TorchError
 
