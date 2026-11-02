@@ -6,18 +6,18 @@
 fn test_tensor(
   data : Array[Float],
   shape : Array[Int32],
-) -> TorchTensor raise @torch.TorchError {
+) -> Tensor raise @torch.TorchError {
   @torch.tensor(data=data.map(Float::to_double), shape~)
 }
 
 ///|
-fn test_vector(data : Array[Float]) -> TorchTensor raise @torch.TorchError {
+fn test_vector(data : Array[Float]) -> Tensor raise @torch.TorchError {
   test_tensor(data, [data.length()])
 }
 
 ///|
 fn assert_tensor_eq(
-  actual : TorchTensor,
+  actual : Tensor,
   data : Array[Float],
   shape : Array[Int32],
 ) -> Unit raise {

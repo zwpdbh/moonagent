@@ -13,7 +13,7 @@ rather than reimplemented in MoonBit.
 
 ## Torch tensors are Python objects
 
-`TorchTensor` wraps a `PyObject` that refers to an actual `torch.Tensor`.
+`Tensor` wraps a `PyObject` that refers to an actual `torch.Tensor`.
 Operations such as matrix multiplication, softmax, RMSNorm, and attention execute
 inside PyTorch. `TorchModule`, `TorchOptimizer`, and `TorchDataLoader` similarly
 wrap their Python counterparts.

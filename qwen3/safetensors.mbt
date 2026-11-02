@@ -165,7 +165,7 @@ pub fn SafeTensors::tensor_names(self : SafeTensors) -> Array[String] {
 pub async fn SafeTensors::tensor_f32(
   self : SafeTensors,
   name : String,
-) -> TorchTensor raise SafeTensorsError {
+) -> Tensor raise SafeTensorsError {
   guard self.tensors.get(name) is Some(tensor) else { raise UnknowTensor(name) }
 
   let bytes = self.tensor_bytes(name)

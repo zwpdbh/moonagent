@@ -1,5 +1,5 @@
 ///|
-pub fn silu(input~ : TorchTensor) -> TorchTensor raise TorchError {
+pub fn silu(input~ : Tensor) -> Tensor raise TorchError {
   let functional = get_functional_module()
   let args = PyTuple::new(1)
   args.set(0, input.obj)
@@ -11,10 +11,10 @@ pub fn silu(input~ : TorchTensor) -> TorchTensor raise TorchError {
 
 ///|
 pub fn rms_norm(
-  input~ : TorchTensor,
-  weight~ : TorchTensor,
+  input~ : Tensor,
+  weight~ : Tensor,
   eps~ : Double,
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   let shape = input.shape()
   guard shape.length() > 0 else {
     raise InvalidShape("RMSNorm input must have at least one dimension")

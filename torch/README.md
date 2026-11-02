@@ -27,12 +27,12 @@ CPython C API
 Python's torch package
 ```
 
-`TorchTensor` wraps a Python `torch.Tensor` object. Operations such as
+`Tensor` wraps a Python `torch.Tensor` object. Operations such as
 `matmul`, `reshape`, and `transpose` execute inside PyTorch. MoonBit arrays and
 Python lists are currently converted by copying.
 
 The former native `zw/tensor` package has been removed. Qwen3 and the examples
-now use `TorchTensor` and real PyTorch operations through this package.
+now use `Tensor` and real PyTorch operations through this package.
 
 ## Using the local `python.mbt` fork as a dependency
 
@@ -252,7 +252,7 @@ The implementation in `torch/torch.mbt` performs these steps:
 4. Build Python positional arguments with `PyTuple`.
 5. Invoke the resolved `PyCallable`.
 6. Check that tensor results contain Python objects and wrap them as
-   `TorchTensor`.
+   `Tensor`.
 7. Convert `Tensor.tolist()` results back into `Array[Double]` when requested.
 
 Errors at this dynamic boundary are represented by `TorchError`. Python import,

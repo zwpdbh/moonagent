@@ -21,12 +21,7 @@ pub fn neural_network(
 }
 
 ///|
-fn toy_data() -> (
-  @torch.TorchTensor,
-  @torch.TorchTensor,
-  @torch.TorchTensor,
-  @torch.TorchTensor,
-) raise @torch.TorchError {
+fn toy_data() -> (@torch.Tensor, @torch.Tensor, @torch.Tensor, @torch.Tensor) raise @torch.TorchError {
   let x_train = @torch.tensor(
     data=[-1.2, 3.1, -0.9, 2.9, -0.5, 2.6, 2.3, -1.1, 2.7, -1.5],
     shape=[5, 2],
@@ -39,8 +34,8 @@ fn toy_data() -> (
 
 ///|
 fn loader(
-  features : @torch.TorchTensor,
-  labels : @torch.TorchTensor,
+  features : @torch.Tensor,
+  labels : @torch.Tensor,
   shuffle~ : Bool,
   drop_last~ : Bool,
 ) -> @torch.TorchDataLoader raise @torch.TorchError {

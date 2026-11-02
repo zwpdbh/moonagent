@@ -33,7 +33,7 @@ pub impl Show for TorchError with fn output(self, logger) {
 pub extend TorchError with Show::{to_string, output}
 
 ///|
-pub struct TorchTensor {
+pub struct Tensor {
   priv obj : PyObject
 }
 
@@ -119,11 +119,11 @@ fn invoke_unit(
 fn expect_tensor(
   value : PyObjectEnum,
   operation : String,
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   guard value is PyClass(object) else {
     raise UnexpectedType("\{operation} did not return a torch.Tensor")
   }
-  TorchTensor::{ obj: object, }
+  Tensor::{ obj: object, }
 }
 
 ///|
@@ -148,8 +148,8 @@ fn shape_arguments(shape : Array[Int32]) -> PyTuple {
 }
 
 ///|
-fn TorchTensor::call(
-  self : TorchTensor,
+fn Tensor::call(
+  self : Tensor,
   name : String,
   args : PyTuple,
 ) -> PyObjectEnum raise TorchError {
@@ -161,7 +161,7 @@ pub fn tensor(
   data~ : Array[Double],
   shape~ : Array[Int32],
   requires_grad~ : Bool = false,
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   if data.length() != shape_size(shape) {
     raise InvalidShape("data length does not match tensor shape")
   }
@@ -188,7 +188,7 @@ pub fn tensor(
 pub fn int_tensor(
   data~ : Array[Int64],
   shape~ : Array[Int32],
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   if data.length() != shape_size(shape) {
     raise InvalidShape("data length does not match tensor shape")
   }
@@ -209,10 +209,10 @@ fn reshape_arguments(shape : Array[Int32]) -> PyTuple {
 }
 
 ///|
-pub fn TorchTensor::reshape(
-  self : TorchTensor,
+pub fn Tensor::reshape(
+  self : Tensor,
   shape : Array[Int32],
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   expect_tensor(
     self.call("reshape", reshape_arguments(shape)),
     "Tensor.reshape",
@@ -220,19 +220,19 @@ pub fn TorchTensor::reshape(
 }
 
 ///|
-pub fn TorchTensor::view(
-  self : TorchTensor,
+pub fn Tensor::view(
+  self : Tensor,
   shape : Array[Int32],
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   expect_tensor(self.call("view", reshape_arguments(shape)), "Tensor.view")
 }
 
 ///|
-pub fn TorchTensor::transpose(
-  self : TorchTensor,
+pub fn Tensor::transpose(
+  self : Tensor,
   dim0~ : Int32,
   dim1~ : Int32,
-) -> TorchTensor raise TorchError {
+) -> Tensor raise TorchError {
   let args = PyTuple::new(2)
   args.set(0, @python.PyInteger::from(dim0.to_int64()))
   args.set(1, @python.PyInteger::from(dim1.to_int64()))
@@ -240,7 +240,7 @@ pub fn TorchTensor::transpose(
 }
 
 ///|
-pub fn TorchTensor::t(self : TorchTensor) -> TorchTensor raise TorchError {
+pub fn Tensor::t(self : Tensor) -> Tensor raise TorchError {
   guard self.obj.get_attr("T") is Some(attribute) else {
     raise AttributeMissing("Tensor.T")
   }
@@ -248,7 +248,7 @@ pub fn TorchTensor::t(self : TorchTensor) -> TorchTensor raise TorchError {
 }
 
 ///|
-pub fn TorchTensor::dtype(self : TorchTensor) -> String raise TorchError {
+pub fn Tensor::dtype(self : Tensor) -> String raise TorchError {
   guard self.obj.get_attr("dtype") is Some(PyClass(dtype)) else {
     raise UnexpectedType("Tensor.dtype is not a torch.dtype")
   }
@@ -256,10 +256,7 @@ pub fn TorchTensor::dtype(self : TorchTensor) -> String raise TorchError {
 }
 
 ///|
-pub fn matmul(
-  left~ : TorchTensor,
-  right~ : TorchTensor,
-) -> TorchTensor raise TorchError {
+pub fn matmul(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError {
   let args = PyTuple::new(2)
   args.set(0, left.obj)
   args.set(1, right.obj)
@@ -270,7 +267,7 @@ pub fn matmul(
 }
 
 ///|
-pub fn TorchTensor::shape(self : TorchTensor) -> Array[Int32] raise TorchError {
+pub fn Tensor::shape(self : Tensor) -> Array[Int32] raise TorchError {
   guard self.obj.get_attr("shape") is Some(PyTuple(shape)) else {
     raise UnexpectedType("Tensor.shape is not a tuple")
   }
@@ -283,9 +280,7 @@ pub fn TorchTensor::shape(self : TorchTensor) -> Array[Int32] raise TorchError {
 }
 
 ///|
-pub fn TorchTensor::to_array(
-  self : TorchTensor,
-) -> Array[Double] raise TorchError {
+pub fn Tensor::to_array(self : Tensor) -> Array[Double] raise TorchError {
   let flat = self.reshape([-1])
   guard flat.call("tolist", PyTuple::new(0)) is PyList(values) else {
     raise UnexpectedType("Tensor.tolist did not return a flat list")

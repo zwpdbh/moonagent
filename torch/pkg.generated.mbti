@@ -2,55 +2,55 @@
 package "zw/torch"
 
 // Values
-pub fn add(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn add(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
-pub fn argmax(input~ : TorchTensor, dim~ : Int32) -> TorchTensor raise TorchError
+pub fn argmax(input~ : Tensor, dim~ : Int32) -> Tensor raise TorchError
 
-pub fn binary_cross_entropy(input~ : TorchTensor, target~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn binary_cross_entropy(input~ : Tensor, target~ : Tensor) -> Tensor raise TorchError
 
-pub fn concat(Array[TorchTensor], dim~ : Int32) -> TorchTensor raise TorchError
+pub fn concat(Array[Tensor], dim~ : Int32) -> Tensor raise TorchError
 
-pub fn cross_entropy(input~ : TorchTensor, target~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn cross_entropy(input~ : Tensor, target~ : Tensor) -> Tensor raise TorchError
 
 pub fn cuda_is_available() -> Bool raise TorchError
 
 pub fn data_loader(dataset~ : TorchDataset, batch_size~ : Int32, shuffle~ : Bool, num_workers~ : Int32, drop_last~ : Bool) -> TorchDataLoader raise TorchError
 
-pub fn dot(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn dot(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
-pub fn int_tensor(data~ : Array[Int64], shape~ : Array[Int32]) -> TorchTensor raise TorchError
+pub fn int_tensor(data~ : Array[Int64], shape~ : Array[Int32]) -> Tensor raise TorchError
 
 pub fn linear(in_features~ : Int32, out_features~ : Int32) -> TorchModule raise TorchError
 
 pub fn manual_seed(seed~ : Int64) -> Unit raise TorchError
 
-pub fn matmul(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn matmul(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
-pub fn mul(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn mul(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError
 
-pub fn rand(Array[Int32]) -> TorchTensor raise TorchError
+pub fn rand(Array[Int32]) -> Tensor raise TorchError
 
 pub fn relu() -> TorchModule raise TorchError
 
-pub fn rms_norm(input~ : TorchTensor, weight~ : TorchTensor, eps~ : Double) -> TorchTensor raise TorchError
+pub fn rms_norm(input~ : Tensor, weight~ : Tensor, eps~ : Double) -> Tensor raise TorchError
 
-pub fn scale(input~ : TorchTensor, scalar~ : Double) -> TorchTensor raise TorchError
+pub fn scale(input~ : Tensor, scalar~ : Double) -> Tensor raise TorchError
 
-pub fn select(input~ : TorchTensor, dim~ : Int32, index~ : Int32) -> TorchTensor raise TorchError
+pub fn select(input~ : Tensor, dim~ : Int32, index~ : Int32) -> Tensor raise TorchError
 
 pub fn sequential(Array[TorchModule]) -> TorchModule raise TorchError
 
 pub fn sgd(parameters~ : TorchParameters, learning_rate~ : Double) -> TorchOptimizer raise TorchError
 
-pub fn sigmoid(input~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn sigmoid(input~ : Tensor) -> Tensor raise TorchError
 
-pub fn silu(input~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn silu(input~ : Tensor) -> Tensor raise TorchError
 
-pub fn softmax(input~ : TorchTensor, dim~ : Int32) -> TorchTensor raise TorchError
+pub fn softmax(input~ : Tensor, dim~ : Int32) -> Tensor raise TorchError
 
-pub fn tensor(data~ : Array[Double], shape~ : Array[Int32], requires_grad? : Bool) -> TorchTensor raise TorchError
+pub fn tensor(data~ : Array[Double], shape~ : Array[Int32], requires_grad? : Bool) -> Tensor raise TorchError
 
-pub fn tensor_dataset(features~ : TorchTensor, labels~ : TorchTensor) -> TorchDataset raise TorchError
+pub fn tensor_dataset(features~ : Tensor, labels~ : Tensor) -> TorchDataset raise TorchError
 
 // Errors
 pub(all) suberror TorchError {
@@ -65,9 +65,25 @@ pub fn TorchError::to_string(Self) -> String
 pub impl Show for TorchError
 
 // Types and methods
+pub struct Tensor {
+  // private fields
+}
+pub fn Tensor::backward(Self) -> Unit raise TorchError
+pub fn Tensor::device(Self) -> String raise TorchError
+pub fn Tensor::dtype(Self) -> String raise TorchError
+pub fn Tensor::grad(Self) -> Self raise TorchError
+pub fn Tensor::item(Self) -> Double raise TorchError
+pub fn Tensor::reshape(Self, Array[Int32]) -> Self raise TorchError
+pub fn Tensor::shape(Self) -> Array[Int32] raise TorchError
+pub fn Tensor::t(Self) -> Self raise TorchError
+pub fn Tensor::to(Self, device~ : String) -> Self raise TorchError
+pub fn Tensor::to_array(Self) -> Array[Double] raise TorchError
+pub fn Tensor::transpose(Self, dim0~ : Int32, dim1~ : Int32) -> Self raise TorchError
+pub fn Tensor::view(Self, Array[Int32]) -> Self raise TorchError
+
 pub(all) struct TorchBatch {
-  features : TorchTensor
-  labels : TorchTensor
+  features : Tensor
+  labels : Tensor
 }
 
 pub struct TorchDataLoader {
@@ -83,7 +99,7 @@ pub struct TorchModule {
   // private fields
 }
 pub fn TorchModule::eval(Self) -> Unit raise TorchError
-pub fn TorchModule::forward(Self, input~ : TorchTensor) -> TorchTensor raise TorchError
+pub fn TorchModule::forward(Self, input~ : Tensor) -> Tensor raise TorchError
 pub fn TorchModule::parameters(Self) -> TorchParameters raise TorchError
 pub fn TorchModule::to(Self, device~ : String) -> Unit raise TorchError
 pub fn TorchModule::train(Self) -> Unit raise TorchError
@@ -97,22 +113,6 @@ pub fn TorchOptimizer::zero_grad(Self) -> Unit raise TorchError
 pub struct TorchParameters {
   // private fields
 }
-
-pub struct TorchTensor {
-  // private fields
-}
-pub fn TorchTensor::backward(Self) -> Unit raise TorchError
-pub fn TorchTensor::device(Self) -> String raise TorchError
-pub fn TorchTensor::dtype(Self) -> String raise TorchError
-pub fn TorchTensor::grad(Self) -> Self raise TorchError
-pub fn TorchTensor::item(Self) -> Double raise TorchError
-pub fn TorchTensor::reshape(Self, Array[Int32]) -> Self raise TorchError
-pub fn TorchTensor::shape(Self) -> Array[Int32] raise TorchError
-pub fn TorchTensor::t(Self) -> Self raise TorchError
-pub fn TorchTensor::to(Self, device~ : String) -> Self raise TorchError
-pub fn TorchTensor::to_array(Self) -> Array[Double] raise TorchError
-pub fn TorchTensor::transpose(Self, dim0~ : Int32, dim1~ : Int32) -> Self raise TorchError
-pub fn TorchTensor::view(Self, Array[Int32]) -> Self raise TorchError
 
 // Type aliases
 

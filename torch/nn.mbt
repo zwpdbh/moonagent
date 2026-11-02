@@ -99,8 +99,8 @@ pub fn sequential(layers : Array[TorchModule]) -> TorchModule raise TorchError {
 ///|
 pub fn TorchModule::forward(
   self : TorchModule,
-  input~ : TorchTensor,
-) -> TorchTensor raise TorchError {
+  input~ : Tensor,
+) -> Tensor raise TorchError {
   let args = PyTuple::new(1)
   args.set(0, input.obj)
   expect_tensor(
@@ -179,9 +179,9 @@ pub fn TorchOptimizer::step(self : TorchOptimizer) -> Unit raise TorchError {
 ///|
 fn functional_loss(
   name : String,
-  input : TorchTensor,
-  target : TorchTensor,
-) -> TorchTensor raise TorchError {
+  input : Tensor,
+  target : Tensor,
+) -> Tensor raise TorchError {
   let args = PyTuple::new(2)
   args.set(0, input.obj)
   args.set(1, target.obj)
@@ -191,17 +191,17 @@ fn functional_loss(
 
 ///|
 pub fn cross_entropy(
-  input~ : TorchTensor,
-  target~ : TorchTensor,
-) -> TorchTensor raise TorchError {
+  input~ : Tensor,
+  target~ : Tensor,
+) -> Tensor raise TorchError {
   functional_loss("cross_entropy", input, target)
 }
 
 ///|
 pub fn binary_cross_entropy(
-  input~ : TorchTensor,
-  target~ : TorchTensor,
-) -> TorchTensor raise TorchError {
+  input~ : Tensor,
+  target~ : Tensor,
+) -> Tensor raise TorchError {
   functional_loss("binary_cross_entropy", input, target)
 }
 

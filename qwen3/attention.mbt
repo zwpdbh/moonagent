@@ -5,10 +5,10 @@
 /// values: [sequence_length, head_dim]
 /// return: [head_dim]
 fn scaled_dot_product_attention(
-  query~ : TorchTensor,
-  keys~ : TorchTensor,
-  values~ : TorchTensor,
-) -> TorchTensor raise @torch.TorchError {
+  query~ : Tensor,
+  keys~ : Tensor,
+  values~ : Tensor,
+) -> Tensor raise @torch.TorchError {
   let query_shape = query.shape()
   let keys_shape = keys.shape()
   let values_shape = values.shape()
@@ -41,10 +41,10 @@ fn scaled_dot_product_attention(
 ///|
 /// Apply RoPE to one head's query or key vector.
 fn apply_rope(
-  input~ : TorchTensor,
+  input~ : Tensor,
   position~ : Int32,
   rope_theta~ : Float,
-) -> TorchTensor raise @torch.TorchError {
+) -> Tensor raise @torch.TorchError {
   let input_shape = input.shape()
   if input_shape.length() != 1 {
     abort("RoPE input must be one head vector")
@@ -100,9 +100,9 @@ priv struct GqaDimensions {
 ///|
 /// Validate GQA inputs once and derive all dimensions needed by the computation.
 fn validate_gqa_inputs(
-  queries : TorchTensor,
-  keys : TorchTensor,
-  values : TorchTensor,
+  queries : Tensor,
+  keys : Tensor,
+  values : Tensor,
 ) -> GqaDimensions raise @torch.TorchError {
   let queries_shape = queries.shape()
   let keys_shape = keys.shape()
@@ -149,10 +149,10 @@ fn validate_gqa_inputs(
 /// values:  [num_key_value_heads, sequence_length, head_dim]
 /// output:  [num_query_heads * head_dim]
 fn grouped_query_attention(
-  queries~ : TorchTensor,
-  keys~ : TorchTensor,
-  values~ : TorchTensor,
-) -> TorchTensor raise @torch.TorchError {
+  queries~ : Tensor,
+  keys~ : Tensor,
+  values~ : Tensor,
+) -> Tensor raise @torch.TorchError {
   let dims = validate_gqa_inputs(queries, keys, values)
   let head_outputs = Array::makei(dims.num_query_heads, query_head_index => {
     let kv_head_index = query_head_index / dims.group_size

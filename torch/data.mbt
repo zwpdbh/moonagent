@@ -10,8 +10,8 @@ pub struct TorchDataLoader {
 
 ///|
 pub(all) struct TorchBatch {
-  features : TorchTensor
-  labels : TorchTensor
+  features : Tensor
+  labels : Tensor
 }
 
 ///|
@@ -21,8 +21,8 @@ fn get_data_module() -> PyModule raise TorchError {
 
 ///|
 pub fn tensor_dataset(
-  features~ : TorchTensor,
-  labels~ : TorchTensor,
+  features~ : Tensor,
+  labels~ : Tensor,
 ) -> TorchDataset raise TorchError {
   let data = get_data_module()
   let args = PyTuple::new(2)

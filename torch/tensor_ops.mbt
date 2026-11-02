@@ -1,9 +1,9 @@
 ///|
 fn binary_tensor_operation(
   name : String,
-  left : TorchTensor,
-  right : TorchTensor,
-) -> TorchTensor raise TorchError {
+  left : Tensor,
+  right : Tensor,
+) -> Tensor raise TorchError {
   let args = PyTuple::new(2)
   args.set(0, left.obj)
   args.set(1, right.obj)
@@ -11,23 +11,17 @@ fn binary_tensor_operation(
 }
 
 ///|
-pub fn add(
-  left~ : TorchTensor,
-  right~ : TorchTensor,
-) -> TorchTensor raise TorchError {
+pub fn add(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError {
   binary_tensor_operation("add", left, right)
 }
 
 ///|
-pub fn mul(
-  left~ : TorchTensor,
-  right~ : TorchTensor,
-) -> TorchTensor raise TorchError {
+pub fn mul(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError {
   binary_tensor_operation("mul", left, right)
 }
 
 ///|
-pub fn sigmoid(input~ : TorchTensor) -> TorchTensor raise TorchError {
+pub fn sigmoid(input~ : Tensor) -> Tensor raise TorchError {
   let args = PyTuple::new(1)
   args.set(0, input.obj)
   expect_tensor(
@@ -37,10 +31,7 @@ pub fn sigmoid(input~ : TorchTensor) -> TorchTensor raise TorchError {
 }
 
 ///|
-pub fn softmax(
-  input~ : TorchTensor,
-  dim~ : Int32,
-) -> TorchTensor raise TorchError {
+pub fn softmax(input~ : Tensor, dim~ : Int32) -> Tensor raise TorchError {
   let args = PyTuple::new(2)
   args.set(0, input.obj)
   args.set(1, @python.PyInteger::from(dim.to_int64()))
@@ -51,10 +42,7 @@ pub fn softmax(
 }
 
 ///|
-pub fn argmax(
-  input~ : TorchTensor,
-  dim~ : Int32,
-) -> TorchTensor raise TorchError {
+pub fn argmax(input~ : Tensor, dim~ : Int32) -> Tensor raise TorchError {
   let args = PyTuple::new(2)
   args.set(0, input.obj)
   args.set(1, @python.PyInteger::from(dim.to_int64()))
@@ -65,17 +53,14 @@ pub fn argmax(
 }
 
 ///|
-pub fn TorchTensor::to(
-  self : TorchTensor,
-  device~ : String,
-) -> TorchTensor raise TorchError {
+pub fn Tensor::to(self : Tensor, device~ : String) -> Tensor raise TorchError {
   let args = PyTuple::new(1)
   args.set(0, @python.PyString::from(device))
   expect_tensor(self.call("to", args), "Tensor.to")
 }
 
 ///|
-pub fn TorchTensor::device(self : TorchTensor) -> String raise TorchError {
+pub fn Tensor::device(self : Tensor) -> String raise TorchError {
   guard self.obj.get_attr("device") is Some(PyClass(device)) else {
     raise UnexpectedType("Tensor.device is not a torch.device")
   }
@@ -83,7 +68,7 @@ pub fn TorchTensor::device(self : TorchTensor) -> String raise TorchError {
 }
 
 ///|
-pub fn TorchTensor::item(self : TorchTensor) -> Double raise TorchError {
+pub fn Tensor::item(self : Tensor) -> Double raise TorchError {
   match self.call("item", PyTuple::new(0)) {
     @python.PyFloat(value) => value.to_double()
     @python.PyInteger(value) => value.to_double()
@@ -92,7 +77,7 @@ pub fn TorchTensor::item(self : TorchTensor) -> Double raise TorchError {
 }
 
 ///|
-pub fn TorchTensor::backward(self : TorchTensor) -> Unit raise TorchError {
+pub fn Tensor::backward(self : Tensor) -> Unit raise TorchError {
   invoke_unit(
     get_method(self.obj, "backward"),
     PyTuple::new(0),
@@ -101,11 +86,11 @@ pub fn TorchTensor::backward(self : TorchTensor) -> Unit raise TorchError {
 }
 
 ///|
-pub fn TorchTensor::grad(self : TorchTensor) -> TorchTensor raise TorchError {
+pub fn Tensor::grad(self : Tensor) -> Tensor raise TorchError {
   guard self.obj.get_attr("grad") is Some(PyClass(gradient)) else {
     raise UnexpectedType("Tensor.grad is not a tensor")
   }
-  TorchTensor::{ obj: gradient, }
+  Tensor::{ obj: gradient, }
 }
 
 ///|
@@ -121,4 +106,54 @@ pub fn cuda_is_available() -> Bool raise TorchError {
     raise UnexpectedType("torch.cuda.is_available did not return a bool")
   }
   available.to_bool()
+}
+
+///|
+pub fn select(
+  input~ : Tensor,
+  dim~ : Int32,
+  index~ : Int32,
+) -> Tensor raise TorchError {
+  let args = PyTuple::new(2)
+  args.set(0, @python.PyInteger::from(dim.to_int64()))
+  args.set(1, @python.PyInteger::from(index.to_int64()))
+  expect_tensor(input.call("select", args), "Tensor.select")
+}
+
+///|
+pub fn concat(inputs : Array[Tensor], dim~ : Int32) -> Tensor raise TorchError {
+  let values = PyList::new()
+  for input in inputs {
+    values.append(input.obj)
+  }
+  let args = PyTuple::new(2)
+  args.set(0, values)
+  args.set(1, @python.PyInteger::from(dim.to_int64()))
+  expect_tensor(
+    invoke(get_torch_function("cat"), args, "torch.cat"),
+    "torch.cat",
+  )
+}
+
+///|
+pub fn rand(shape : Array[Int32]) -> Tensor raise TorchError {
+  ignore(shape_size(shape))
+  let args = PyTuple::new(1)
+  args.set(0, shape_arguments(shape))
+  expect_tensor(
+    invoke(get_torch_function("rand"), args, "torch.rand"),
+    "torch.rand",
+  )
+}
+
+///|
+pub fn scale(input~ : Tensor, scalar~ : Double) -> Tensor raise TorchError {
+  let args = PyTuple::new(1)
+  args.set(0, @python.PyFloat::from(scalar))
+  expect_tensor(input.call("mul", args), "Tensor.mul")
+}
+
+///|
+pub fn dot(left~ : Tensor, right~ : Tensor) -> Tensor raise TorchError {
+  binary_tensor_operation("dot", left, right)
 }
