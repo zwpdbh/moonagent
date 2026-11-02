@@ -16,6 +16,8 @@ pub fn expect_object(Json, what~ : String, path~ : @json.JsonPath) -> Map[String
 
 pub fn[T : @json.FromJson] extract(Map[String, Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
 
+pub fn parse_case() -> String raise CliError
+
 pub fn qwen3_model_dir() -> String
 
 pub fn split_with_pre_tokenizer(String, String) -> Array[String]
@@ -23,6 +25,11 @@ pub fn split_with_pre_tokenizer(String, String) -> Array[String]
 pub fn symbols_to_bytes(Array[String]) -> Bytes
 
 // Errors
+pub(all) suberror CliError {
+  MissingCase
+  InvalidCase(String)
+}
+
 pub(all) suberror DownloadError {
   BadStatus(Int32, String)
   TooManyRedirects(String)

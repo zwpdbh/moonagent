@@ -2,6 +2,7 @@ import {
   "username/ch02" @lib,
   "zw/torch",
   "zw/qwen3",
+  "zw/utils",
 }
 
 pkgtype(kind: "executable")

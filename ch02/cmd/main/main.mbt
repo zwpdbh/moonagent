@@ -2,8 +2,9 @@
 using @torch {type TorchError}
 
 ///|
-fn main {
-  let result = run() catch {
+fn main raise {
+  let case = @utils.parse_case()
+  let result = run(case) catch {
     error => {
       println(error.to_string())
       return
@@ -13,7 +14,7 @@ fn main {
 }
 
 ///|
-fn run() -> Array[Int64] raise TorchError {
+fn run(case : String) -> Array[Int64] raise TorchError {
   let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
   @torch.add_python_path(
     "/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages",
@@ -28,17 +29,23 @@ fn run() -> Array[Int64] raise TorchError {
   let input_ids = tokenizer.encode(prompt).map(id => id.to_int64()) catch {
       _ => raise ImportFailed("failed to encode Qwen3 prompt")
     }
-  @lib.generate_text_basic_stream_cache(
-    model~,
-    token_ids=input_ids,
-    max_new_tokens=32,
-    eos_token_id=Some(151645L),
-    device~,
-    on_token=id => {
-      let text = tokenizer.decode([id.to_int()]) catch {
-        _ => raise ImportFailed("failed to decode Qwen3 token")
-      }
-      println(text)
-    },
-  )
+
+  match case {
+    "case01" => abort("TODO")
+    "case02" =>
+      @lib.generate_text_basic_stream_cache(
+        model~,
+        token_ids=input_ids,
+        max_new_tokens=32,
+        eos_token_id=Some(151645L),
+        device~,
+        on_token=id => {
+          let text = tokenizer.decode([id.to_int()]) catch {
+            _ => raise ImportFailed("failed to decode Qwen3 token")
+          }
+          println(text)
+        },
+      )
+    _ => abort("Not supported case: \{case}")
+  }
 }
