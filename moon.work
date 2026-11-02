@@ -3,4 +3,6 @@ members = [
   "./utils",
   "./qwen3",
   "./tensor",
+  "./torch",
+  "../forked/python.mbt",
 ]

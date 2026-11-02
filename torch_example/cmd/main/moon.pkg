@@ -1,0 +1,5 @@
+// import {
+//   "username/torch_example" @lib,
+// }
+
+pkgtype(kind: "executable")

@@ -1,0 +1,225 @@
+///|
+using @python {
+  type PyCallable,
+  type PyList,
+  type PyModule,
+  type PyObject,
+  type PyObjectEnum,
+  type PyTuple,
+}
+
+///|
+pub(all) suberror TorchError {
+  ImportFailed(String)
+  AttributeMissing(String)
+  CallFailed(String)
+  UnexpectedType(String)
+  InvalidShape(String)
+}
+
+///|
+pub struct TorchTensor {
+  priv obj : PyObject
+}
+
+///|
+fn import_torch_module() -> () -> PyModule? {
+  let torch_mod = @python.pyimport("torch", print_err=true)
+  fn() { torch_mod }
+}
+
+///|
+let torch_module : () -> PyModule? = import_torch_module()
+
+///|
+fn get_torch_module() -> PyModule raise TorchError {
+  guard torch_module() is Some(torch_mod) else { raise ImportFailed("torch") }
+  torch_mod
+}
+
+///|
+fn get_torch_function(name : String) -> PyCallable raise TorchError {
+  guard get_torch_module().get_attr(name) is Some(PyCallable(function)) else {
+    raise AttributeMissing("torch.\{name}")
+  }
+  function
+}
+
+///|
+fn get_method(object : PyObject, name : String) -> PyCallable raise TorchError {
+  guard object.get_attr(name) is Some(PyCallable(callable)) else {
+    raise AttributeMissing(name)
+  }
+  callable
+}
+
+///|
+fn invoke(
+  callable : PyCallable,
+  args : PyTuple,
+  name : String,
+) -> PyObjectEnum raise TorchError {
+  let result = callable.invoke(args~, print_err=true) catch {
+    _ => raise CallFailed(name)
+  }
+  guard result is Some(value) else {
+    raise UnexpectedType("\{name} returned None")
+  }
+  value
+}
+
+///|
+fn expect_tensor(
+  value : PyObjectEnum,
+  operation : String,
+) -> TorchTensor raise TorchError {
+  guard value is PyClass(object) else {
+    raise UnexpectedType("\{operation} did not return a torch.Tensor")
+  }
+  TorchTensor::{ obj: object, }
+}
+
+///|
+fn shape_size(shape : Array[Int32]) -> Int32 raise TorchError {
+  let mut size = 1
+  for dimension in shape {
+    if dimension < 0 {
+      raise InvalidShape("tensor dimensions must not be negative")
+    }
+    size *= dimension
+  }
+  size
+}
+
+///|
+fn shape_arguments(shape : Array[Int32]) -> PyTuple {
+  let args = PyTuple::new(shape.length().to_uint64())
+  for index, dimension in shape {
+    args.set(index, @python.PyInteger::from(dimension.to_int64()))
+  }
+  args
+}
+
+///|
+fn TorchTensor::call(
+  self : TorchTensor,
+  name : String,
+  args : PyTuple,
+) -> PyObjectEnum raise TorchError {
+  invoke(get_method(self.obj, name), args, name)
+}
+
+///|
+pub fn tensor(
+  data~ : Array[Double],
+  shape~ : Array[Int32],
+) -> TorchTensor raise TorchError {
+  if data.length() != shape_size(shape) {
+    raise InvalidShape("data length does not match tensor shape")
+  }
+  let values = PyList::from(data.map(@python.PyFloat::from))
+  let args = PyTuple::new(1)
+  args.set(0, values)
+  expect_tensor(
+    invoke(get_torch_function("tensor"), args, "torch.tensor"),
+    "torch.tensor",
+  ).reshape(shape)
+}
+
+///|
+fn reshape_arguments(shape : Array[Int32]) -> PyTuple {
+  let args = PyTuple::new(1)
+  args.set(0, shape_arguments(shape))
+  args
+}
+
+///|
+pub fn TorchTensor::reshape(
+  self : TorchTensor,
+  shape : Array[Int32],
+) -> TorchTensor raise TorchError {
+  expect_tensor(
+    self.call("reshape", reshape_arguments(shape)),
+    "Tensor.reshape",
+  )
+}
+
+///|
+pub fn TorchTensor::view(
+  self : TorchTensor,
+  shape : Array[Int32],
+) -> TorchTensor raise TorchError {
+  expect_tensor(self.call("view", reshape_arguments(shape)), "Tensor.view")
+}
+
+///|
+pub fn TorchTensor::transpose(
+  self : TorchTensor,
+  dim0~ : Int32,
+  dim1~ : Int32,
+) -> TorchTensor raise TorchError {
+  let args = PyTuple::new(2)
+  args.set(0, @python.PyInteger::from(dim0.to_int64()))
+  args.set(1, @python.PyInteger::from(dim1.to_int64()))
+  expect_tensor(self.call("transpose", args), "Tensor.transpose")
+}
+
+///|
+pub fn TorchTensor::t(self : TorchTensor) -> TorchTensor raise TorchError {
+  guard self.obj.get_attr("T") is Some(attribute) else {
+    raise AttributeMissing("Tensor.T")
+  }
+  expect_tensor(attribute, "Tensor.T")
+}
+
+///|
+pub fn TorchTensor::dtype(self : TorchTensor) -> String raise TorchError {
+  guard self.obj.get_attr("dtype") is Some(PyClass(dtype)) else {
+    raise UnexpectedType("Tensor.dtype is not a torch.dtype")
+  }
+  dtype.to_string()
+}
+
+///|
+pub fn matmul(
+  left~ : TorchTensor,
+  right~ : TorchTensor,
+) -> TorchTensor raise TorchError {
+  let args = PyTuple::new(2)
+  args.set(0, left.obj)
+  args.set(1, right.obj)
+  expect_tensor(
+    invoke(get_torch_function("matmul"), args, "torch.matmul"),
+    "torch.matmul",
+  )
+}
+
+///|
+pub fn TorchTensor::shape(self : TorchTensor) -> Array[Int32] raise TorchError {
+  guard self.obj.get_attr("shape") is Some(PyTuple(shape)) else {
+    raise UnexpectedType("Tensor.shape is not a tuple")
+  }
+  Array::makei(shape.len().to_int(), index => {
+    guard shape.get(index) is Some(@python.PyInteger(dimension)) else {
+      raise UnexpectedType("Tensor.shape contains a non-integer")
+    }
+    dimension.to_int64().to_int()
+  })
+}
+
+///|
+pub fn TorchTensor::to_array(
+  self : TorchTensor,
+) -> Array[Double] raise TorchError {
+  let flat = self.reshape([-1])
+  guard flat.call("tolist", PyTuple::new(0)) is PyList(values) else {
+    raise UnexpectedType("Tensor.tolist did not return a flat list")
+  }
+  Array::makei(values.len(), index => {
+    match values.get(index) {
+      Some(@python.PyFloat(value)) => value.to_double()
+      Some(@python.PyInteger(value)) => value.to_double()
+      _ => raise UnexpectedType("Tensor.tolist returned a non-numeric value")
+    }
+  })
+}

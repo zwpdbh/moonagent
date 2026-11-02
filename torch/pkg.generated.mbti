@@ -1,0 +1,32 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "zw/torch"
+
+// Values
+pub fn matmul(left~ : TorchTensor, right~ : TorchTensor) -> TorchTensor raise TorchError
+
+pub fn tensor(data~ : Array[Double], shape~ : Array[Int32]) -> TorchTensor raise TorchError
+
+// Errors
+pub(all) suberror TorchError {
+  ImportFailed(String)
+  AttributeMissing(String)
+  CallFailed(String)
+  UnexpectedType(String)
+  InvalidShape(String)
+}
+
+// Types and methods
+pub struct TorchTensor {
+  // private fields
+}
+pub fn TorchTensor::dtype(Self) -> String raise TorchError
+pub fn TorchTensor::reshape(Self, Array[Int32]) -> Self raise TorchError
+pub fn TorchTensor::shape(Self) -> Array[Int32] raise TorchError
+pub fn TorchTensor::t(Self) -> Self raise TorchError
+pub fn TorchTensor::to_array(Self) -> Array[Double] raise TorchError
+pub fn TorchTensor::transpose(Self, dim0~ : Int32, dim1~ : Int32) -> Self raise TorchError
+pub fn TorchTensor::view(Self, Array[Int32]) -> Self raise TorchError
+
+// Type aliases
+
+// Traits

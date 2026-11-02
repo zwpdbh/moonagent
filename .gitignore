@@ -5,6 +5,9 @@ target/
 # Package registry cache (per-project, if created)
 .mooncakes/
 
+# Local Python environment
+.venv/
+
 # Editor / tooling state
 .moonagent/
 
