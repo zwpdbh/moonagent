@@ -34,7 +34,7 @@ fn scaled_dot_product_attention(
     input=scores,
     scalar=1.0 / head_dim.to_double().sqrt(),
   )
-  let attention_weights = softmax(input=scaled_scores, dim=0)
+  let attention_weights = @torch.softmax(input=scaled_scores, dim=0)
   @torch.matmul(left=attention_weights, right=values)
 }
 

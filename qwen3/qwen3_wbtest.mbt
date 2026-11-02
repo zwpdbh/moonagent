@@ -364,7 +364,7 @@ test "TensorOffsets rejects non-array and wrong-length inputs" {
 
 ///|
 test "rms_norm normalizes input and applies learned weights" {
-  let result = rms_norm(
+  let result = @torch.rms_norm(
     input=test_vector([3.0, 4.0]),
     weight=test_vector([1.0, 0.5]),
     eps=0.0,
@@ -377,7 +377,7 @@ test "rms_norm normalizes input and applies learned weights" {
 
 ///|
 test "rms_norm handles zero input with epsilon" {
-  let result = rms_norm(
+  let result = @torch.rms_norm(
     input=test_vector([0.0, 0.0]),
     weight=test_vector([1.0, 2.0]),
     eps=0.000001,
@@ -387,31 +387,31 @@ test "rms_norm handles zero input with epsilon" {
 
 ///|
 test "linear computes vector-matrix dot products" {
-  let result = linear(
-    input=test_vector([1.0, 2.0, 3.0]),
-    weight=test_tensor([1.0, 0.0, 0.0, 0.0, 1.0, 1.0], [2, 3]),
+  let result = @torch.matmul(
+    left=test_tensor([1.0, 0.0, 0.0, 0.0, 1.0, 1.0], [2, 3]),
+    right=test_vector([1.0, 2.0, 3.0]),
   )
   assert_tensor_eq(result, [1.0, 5.0], [2])
 }
 
 ///|
 test "linear returns one value per output row" {
-  let result = linear(
-    input=test_vector([2.0, -1.0]),
-    weight=test_tensor([1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [3, 2]),
+  let result = @torch.matmul(
+    left=test_tensor([1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [3, 2]),
+    right=test_vector([2.0, -1.0]),
   )
   assert_tensor_eq(result, [2.0, -1.0, 1.0], [3])
 }
 
 ///|
 test "softmax converts equal scores to equal weights" {
-  let result = softmax(input=test_vector([0.0, 0.0]), dim=0)
+  let result = @torch.softmax(input=test_vector([0.0, 0.0]), dim=0)
   assert_tensor_eq(result, [0.5, 0.5], [2])
 }
 
 ///|
 test "softmax produces normalized weights for large scores" {
-  let result = softmax(input=test_vector([10000.0, 10001.0]), dim=0)
+  let result = @torch.softmax(input=test_vector([10000.0, 10001.0]), dim=0)
   let data = result.to_array()
   assert_true((data[0] - 0.26894143).abs() < 0.000001)
   assert_true((data[1] - 0.7310586).abs() < 0.000001)
@@ -420,8 +420,9 @@ test "softmax produces normalized weights for large scores" {
 }
 
 ///|
-test "panic softmax rejects empty input" {
-  ignore(softmax(input=test_vector([]), dim=0))
+test "softmax accepts empty input" {
+  let result = @torch.softmax(input=test_vector([]), dim=0)
+  assert_tensor_eq(result, [], [0])
 }
 
 ///|
