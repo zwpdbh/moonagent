@@ -106,6 +106,55 @@ fn apply_rope(
 }
 
 ///|
+priv struct GqaDimensions {
+  num_query_heads : Int32
+  num_key_value_heads : Int32
+  sequence_length : Int32
+  head_dim : Int32
+  group_size : Int32
+}
+
+///|
+/// Validate GQA inputs once and derive all dimensions needed by the computation.
+fn validate_gqa_inputs(
+  queries : TensorView,
+  keys : TensorView,
+  values : TensorView,
+) -> GqaDimensions {
+  if queries.rank() != 2 || keys.rank() != 3 || values.rank() != 3 {
+    abort("GQA expects rank-2 queries and rank-3 keys/values")
+  }
+  if keys.shape != values.shape {
+    abort("GQA keys and values must have identical shapes")
+  }
+
+  let num_query_heads = queries.dim(0)
+  let head_dim = queries.dim(1)
+  let num_key_value_heads = keys.dim(0)
+  let sequence_length = keys.dim(1)
+  if num_query_heads <= 0 ||
+    num_key_value_heads <= 0 ||
+    sequence_length <= 0 ||
+    head_dim <= 0 {
+    abort("GQA head counts, sequence length, and head_dim must be positive")
+  }
+  if keys.dim(2) != head_dim {
+    abort("GQA queries and KV caches must have matching head_dim")
+  }
+  if num_query_heads % num_key_value_heads != 0 {
+    abort("GQA query heads must be divisible by KV heads")
+  }
+  let group_size = num_query_heads / num_key_value_heads
+  {
+    num_query_heads,
+    num_key_value_heads,
+    sequence_length,
+    head_dim,
+    group_size,
+  }
+}
+
+///|
 /// Run grouped-query attention(GQA) for one token and concatenate all head outputs.
 ///
 /// Expected shapes:
@@ -140,67 +189,39 @@ fn grouped_query_attention(
   keys~ : TensorView,
   values~ : TensorView,
 ) -> Tensor {
-  // 1. Validate the ranks: queries = 2, keys = 3, values = 3.
-  //    Require keys.shape == values.shape, nonzero head counts/dimensions,
-  //    and matching head_dim between queries and the KV caches.
-  if queries.rank() != 2 {
-    abort("queries rank need to be 2")
-  }
+  let dims : GqaDimensions = validate_gqa_inputs(queries, keys, values)
 
-  if keys.rank() != 3 {
-    abort("keys' rank need to be 3")
-  }
+  // 4. Create one output per query head. All shape checks have already passed,
+  //    so this loop only needs to select the shared KV head for each query head.
+  let head_outputs : Array[Tensor] = Array::makei(dims.num_query_heads, query_head_index => {
+    let kv_head_index = query_head_index / dims.group_size
 
-  if values.rank() != 3 {
-    abort("values' rank need to be 3")
-  }
+    // 5. Select the current head's inputs without copying:
+    let query = queries.slice_first_axis(query_head_index)
+    let head_keys = keys.slice_first_axis(kv_head_index)
+    let head_values = values.slice_first_axis(kv_head_index)
 
-  if keys.shape != values.shape {
-    abort("keys.shape should eq with values.shape")
-  }
-
-  // 2. Derive all dimensions from the tensor shapes:
-  //    num_query_heads     = queries.dim(0)
-  //    head_dim            = queries.dim(1)
-  //    num_key_value_heads = keys.dim(0)
-  //    sequence_length     = keys.dim(1)
-  //    Also check keys.dim(2) == head_dim.
-  let num_query_heads = queries.dim(0)
-  let head_dim = queries.dim(1)
-
-  let num_key_value_heads = keys.dim(0)
-  let sequence_length = keys.dim(1)
-
-  if keys.dim(2) != head_dim {
-    abort("Need matching head_dim between queries and the KV caches")
-  }
-
-  // 3. Require num_query_heads % num_key_value_heads == 0, then calculate:
-  //    group_size = num_query_heads / num_key_value_heads.
-  //    Qwen3 has group_size = 16 / 8 = 2.
-
-  // 4. Create one output per query head with Array::makei(num_query_heads, ...).
-  //    Inside that function, calculate the shared KV head:
-  //    kv_head_index = query_head_index / group_size.
-
-  // 5. Select the current head's inputs without copying:
-  //    query       = queries.slice_first_axis(query_head_index) // [head_dim]
-  //    head_keys   = keys.slice_first_axis(kv_head_index)       // [sequence_length, head_dim]
-  //    head_values = values.slice_first_axis(kv_head_index)     // [sequence_length, head_dim]
-
-  // 6. Call scaled_dot_product_attention(query=query, keys=head_keys,
-  //    values=head_values). Collect each returned Tensor in head_outputs.
-  //    Every output has shape [head_dim].
+    // 6. Call scaled_dot_product_attention with the selected views and return
+    //    its Tensor as this query head's output.
+    scaled_dot_product_attention(query~, keys=head_keys, values=head_values)
+  })
 
   // 7. Concatenate head_outputs into one flat Array[Float] of length
-  //    num_query_heads * head_dim. For each flat output index, you can use:
-  //    head_index = flat_index / head_dim
-  //    dimension  = flat_index % head_dim
+  //    dims.num_query_heads * dims.head_dim. For each flat output index:
+  //    head_index = flat_index / dims.head_dim
+  //    dimension  = flat_index % dims.head_dim
   //    value      = head_outputs[head_index].data[dimension]
+  let concatenated_data = Array::makei(dims.num_query_heads * dims.head_dim, flat_index => {
+    let head_index = flat_index / dims.head_dim
+    let dimension = flat_index % dims.head_dim
+    head_outputs[head_index].data[dimension]
+  })
 
   // 8. Return Tensor::new(data=concatenated_data,
-  //    shape=[num_query_heads * head_dim]).
-  abort("TODO")
+  //    shape=[dims.num_query_heads * dims.head_dim]).
+  Tensor::new(data=concatenated_data, shape=[
+    dims.num_query_heads * dims.head_dim,
+  ])
 }
 
 ///|

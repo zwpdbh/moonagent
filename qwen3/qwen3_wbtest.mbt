@@ -501,3 +501,38 @@ test "panic apply_rope rejects an odd head dimension" {
     ),
   )
 }
+
+///|
+test "validate_gqa_inputs derives dimensions and group size" {
+  let dims = validate_gqa_inputs(
+    test_tensor(Array::make(8, 0.0F), [4, 2]).view(),
+    test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
+    test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
+  )
+  assert_eq(dims.num_query_heads, 4)
+  assert_eq(dims.num_key_value_heads, 2)
+  assert_eq(dims.sequence_length, 3)
+  assert_eq(dims.head_dim, 2)
+  assert_eq(dims.group_size, 2)
+}
+
+///|
+test "panic validate_gqa_inputs rejects non-divisible head counts" {
+  ignore(
+    validate_gqa_inputs(
+      test_tensor(Array::make(6, 0.0F), [3, 2]).view(),
+      test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
+      test_tensor(Array::make(12, 0.0F), [2, 3, 2]).view(),
+    ),
+  )
+}
+
+///|
+test "grouped-query attention shares KV heads and concatenates outputs" {
+  let result = grouped_query_attention(
+    queries=test_tensor(Array::make(4, 0.0F), [4, 1]).view(),
+    keys=test_tensor(Array::make(4, 0.0F), [2, 2, 1]).view(),
+    values=test_tensor([2.0, 4.0, 10.0, 20.0], [2, 2, 1]).view(),
+  )
+  assert_tensor_eq(result, [3.0, 3.0, 15.0, 15.0], [4])
+}
