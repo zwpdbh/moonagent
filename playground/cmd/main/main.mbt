@@ -14,6 +14,10 @@ fn main {
       @ch02.run_ch02_ex01(text) catch {
         error => println(error)
       }
+    Some(Ex02(text~)) =>
+      @ch02.run_ch02_ex02(text) catch {
+        error => println(error)
+      }
     Some(Ex03(Some(Case01))) => println("Ex03 Case01 selected")
     Some(Ex03(Some(Case02(input~)))) =>
       println("Ex03 Case02 received: \{input}")

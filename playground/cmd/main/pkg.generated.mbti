@@ -15,6 +15,7 @@ type AppArgs
 
 pub enum Command {
   Ex01(text~ : String)
+  Ex02(text~ : String)
   Ex03(SubCommand?)
 }
 

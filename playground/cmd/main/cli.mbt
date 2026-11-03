@@ -17,6 +17,7 @@ pub enum SubCommand {
 ///|
 pub enum Command {
   Ex01(text~ : String)
+  Ex02(text~ : String)
   Ex03(SubCommand?)
 }
 
@@ -25,6 +26,14 @@ pub enum Command {
 impl @clap.Value for AppArgs with fn add_value(self, name, value, _positional) -> Unit raise @clap.ParserError {
   match self.command {
     Some(Ex01(..)) => {
+      guard name == "text" else {
+        raise @clap.ParserError::InvalidArgumentName(
+          "expected text, got: \{name}",
+        )
+      }
+      self.command = Some(Ex01(text=value))
+    }
+    Some(Ex02(..)) => {
       guard name == "text" else {
         raise @clap.ParserError::InvalidArgumentName(
           "expected text, got: \{name}",
@@ -60,6 +69,7 @@ impl @clap.Value for AppArgs with fn add_value(self, name, value, _positional) -
 impl @clap.Value for AppArgs with fn select_subcmd(self, name) -> AppArgs raise @clap.ParserError {
   match name {
     "ex01" => self.command = Some(Ex01(text=""))
+    "ex02" => self.command = Some(Ex02(text=""))
     "ex03" => self.command = Some(Ex03(None))
     "case01" if self.command is Some(Ex03(_)) =>
       self.command = Some(Ex03(Some(Case01)))
@@ -81,6 +91,15 @@ pub fn parse_args() -> Command? raise @clap.ParserError {
     description="Command-line examples",
     subcmds={
       "ex01": @clap.SubCommand::new(
+        args={
+          "text": @clap.Arg::positional(
+            nargs=@clap.Nargs::One,
+            help="Text to process",
+          ),
+        },
+        help="Run the text-input example",
+      ),
+      "ex02": @clap.SubCommand::new(
         args={
           "text": @clap.Arg::positional(
             nargs=@clap.Nargs::One,
