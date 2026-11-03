@@ -139,11 +139,11 @@ pub fn generate_text_basic_stream(
     1,
     token_ids.length(),
   ]).to(device~)
+
   let mut remaining = max_new_tokens
-  let mut finished = false
 
   fn next_token() -> Result[Int64?, TorchError] {
-    if finished || remaining == 0 {
+    if remaining == 0 {
       return Ok(None)
     }
     @torch.without_grad(() => {
@@ -153,9 +153,11 @@ pub fn generate_text_basic_stream(
         index=-1,
       )
       let next_token = @torch.argmax(input=logits, dim=-1)
+
       let next_id = next_token.item().to_int64()
       if eos_token_id is Some(eos_id) && next_id == eos_id {
-        finished = true
+        // Keep the stream exhausted if next() is called again after EOS.
+        remaining = 0
         return Ok(None)
       }
 
