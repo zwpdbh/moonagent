@@ -1,6 +1,7 @@
 import {
   "zw/torch",
   "zw/qwen3",
+  "moonbitlang/core/debug",
 }
 
 supported_targets = "native"

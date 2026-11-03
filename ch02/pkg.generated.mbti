@@ -1,7 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "username/ch02"
+package "zw/ch02"
 
 import {
+  "moonbitlang/core/debug",
   "zw/qwen3",
   "zw/torch",
 }
@@ -11,7 +12,16 @@ pub fn generate_text_basic_stream_cache(model~ : @qwen3.Qwen3Model, token_ids~ :
 
 pub fn load_cached_qwen3(model_dir~ : String, device~ : String) -> @qwen3.Qwen3Model raise @torch.TorchError
 
+pub fn run_ch02_ex01(String) -> Unit raise Ch02Error
+
 // Errors
+pub(all) suberror Ch02Error {
+  InvalidArgumentValue(String)
+} derive(@debug.Debug)
+pub fn Ch02Error::output(Self, &Logger) -> Unit
+pub fn Ch02Error::to_repr(Self) -> @debug.Repr
+pub fn Ch02Error::to_string(Self) -> String
+pub impl Show for Ch02Error
 
 // Types and methods
 

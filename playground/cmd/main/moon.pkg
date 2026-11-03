@@ -1,8 +1,9 @@
 import {
-  "moonbitlang/async",
-  "moonbitlang/core/argparse",
-  "zw/playground",
-  "zw/utils",
+  "TheWaWaR/clap",
+  "moonbitlang/core/env",
+  "zw/ch02",
 }
 
 pkgtype(kind: "executable")
+
+supported_targets = "native"

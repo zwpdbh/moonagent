@@ -9,7 +9,7 @@
 //   "moonbitlang/x@0.4.6",
 // }
 
-name = "zw/playground"
+name = "username/playground"
 
 version = "0.1.0"
 
@@ -19,14 +19,14 @@ repository = ""
 
 license = "Apache-2.0"
 
-keywords = [ ]
+keywords = []
 
 preferred_target = "native"
 
 description = ""
 
 import {
-  "moonbitlang/x@0.5.5",
-  "moonbitlang/async@0.22.4",
-  "zw/utils@0.1.0",
+ "TheWaWaR/clap@0.2.6",
+ "zw/ch02@0.1.0"
 }
+

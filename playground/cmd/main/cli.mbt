@@ -1,105 +1,117 @@
-// Command-line parsing and dispatch for the playground CLI.
-//
-// Add a new experiment: create its Command in `command()` below and a
-// branch in `run()`'s match.
+///|
+/// Typed clap.mbt example: parse arguments, then dispatch in main.
+/// Published dependency: moon add TheWaWaR/clap
+/// Local-fork alternative: add "../forked/clap.mbt" to moon.work members.
+/// Keep TheWaWaR/clap@0.2.6 in moon.mod; the workspace resolves the local member.
+/// moon.pkg imports: "TheWaWaR/clap" @clap and "moonbitlang/core/env"
+struct AppArgs {
+  mut command : Command?
+}
 
 ///|
-/// The playground command tree — one subcommand per experiment.
-fn command() -> @argparse.Command {
-  @argparse.Command(
-    "playground",
-    about="MoonBit feature playground",
-    subcommand_required=true,
-    subcommands=[
-      @argparse.Command("hello", about="Print a greeting", options=[
-        @argparse.OptionArg("name", short='n', about="Who to greet", default_values=[
-          "world",
-        ]),
-      ]),
-      @argparse.Command("echo", about="Echo the arguments back", positionals=[
-        @argparse.PositionArg(
-          "words",
-          about="Words to echo",
-          num_args=@argparse.ValueRange(lower=1, upper=99),
-        ),
-      ]),
-      @argparse.Command(
-        "download",
-        about="Download a file (skips files already complete in the target dir)",
-        options=[
-          @argparse.OptionArg(
-            "out",
-            short='o',
-            about="Output directory (default: the shared Qwen3 model cache)",
+pub enum SubCommand {
+  Case01
+  Case02(input~ : String)
+}
+
+///|
+pub enum Command {
+  Ex01(text~ : String)
+  Ex03(SubCommand?)
+}
+
+///|
+/// Map argument values into the currently selected command variant.
+impl @clap.Value for AppArgs with fn add_value(self, name, value, _positional) -> Unit raise @clap.ParserError {
+  match self.command {
+    Some(Ex01(..)) => {
+      guard name == "text" else {
+        raise @clap.ParserError::InvalidArgumentName(
+          "expected text, got: \{name}",
+        )
+      }
+      self.command = Some(Ex01(text=value))
+    }
+    Some(Ex03(None)) =>
+      raise @clap.ParserError::InvalidArgumentName(
+        "ex03 requires case01 or case02 before a value",
+      )
+    Some(Ex03(Some(Case01))) =>
+      raise @clap.ParserError::InvalidArgumentName(
+        "case01 takes no value: \{name}",
+      )
+    Some(Ex03(Some(Case02(..)))) => {
+      guard name == "input" else {
+        raise @clap.ParserError::InvalidArgumentName(
+          "expected input, got: \{name}",
+        )
+      }
+      self.command = Some(Ex03(Some(Case02(input=value))))
+    }
+    None =>
+      raise @clap.ParserError::InvalidArgumentName(
+        "value before a subcommand: \{name}",
+      )
+  }
+}
+
+///|
+/// Select the command or nested subcommand to populate.
+impl @clap.Value for AppArgs with fn select_subcmd(self, name) -> AppArgs raise @clap.ParserError {
+  match name {
+    "ex01" => self.command = Some(Ex01(text=""))
+    "ex03" => self.command = Some(Ex03(None))
+    "case01" if self.command is Some(Ex03(_)) =>
+      self.command = Some(Ex03(Some(Case01)))
+    "case02" if self.command is Some(Ex03(_)) =>
+      self.command = Some(Ex03(Some(Case02(input=""))))
+    _ =>
+      raise @clap.ParserError::InvalidSubCommandName(
+        "unknown subcommand: \{name}",
+      )
+  }
+  self
+}
+
+///|
+/// Parse arguments without running application logic.
+pub fn parse_args() -> Command? raise @clap.ParserError {
+  let parser = @clap.Parser::new(
+    prog="myapp",
+    description="Command-line examples",
+    subcmds={
+      "ex00": @clap.SubCommand::new(help="Show the no-argument example"),
+      "ex01": @clap.SubCommand::new(
+        args={
+          "text": @clap.Arg::positional(
+            nargs=@clap.Nargs::One,
+            help="Text to process",
           ),
-          @argparse.OptionArg(
-            "backup",
-            short='b',
-            about="Backup URL to try if the primary fails",
-          ),
-        ],
-        positionals=[
-          @argparse.PositionArg(
-            "url",
-            about="URL to download",
-            num_args=@argparse.ValueRange::single(),
-          ),
-        ],
+        },
+        help="Run the text-input example",
       ),
-    ],
+      "ex03": @clap.SubCommand::new(
+        subcmds={
+          "case01": @clap.SubCommand::new(help="Show the first nested example"),
+          "case02": @clap.SubCommand::new(
+            args={
+              "input": @clap.Arg::positional(
+                nargs=@clap.Nargs::One,
+                help="Text for the second nested example",
+              ),
+            },
+            help="Run the second nested example with text",
+          ),
+        },
+        help="Run a nested-command example",
+      ),
+    },
   )
-}
-
-///|
-async fn run_download(m : @argparse.Matches) -> Unit {
-  let url = match m.values.get("url") {
-    Some([url, ..]) => url
-    _ => {
-      println("error: no URL given")
-      return
-    }
+  let value = AppArgs::{ command: None, }
+  let help_message = parser.parse(value, @env.args()[1:])
+  if help_message is Some(help) {
+    println(help)
+    return None
   }
-  let out = match m.values.get("out") {
-    Some([dir, ..]) => dir
-    _ => @utils.qwen3_model_dir()
-  }
-  let backup = match m.values.get("backup") {
-    Some([b, ..]) => Some(b)
-    _ => None
-  }
-  try {
-    let dest = @utils.download_file(url, out, backup_url?=backup)
-    println("saved: \{dest}")
-  } catch {
-    e => println("download failed: \{e}")
-  }
-}
-
-///|
-/// Parse argv and dispatch to the subcommand handler.
-async fn run() -> Unit {
-  let cmd = command()
-  let matches = cmd.parse() catch {
-    e => {
-      println(e)
-      println(cmd.render_help())
-      return
-    }
-  }
-  match matches.subcommand {
-    Some(("hello", m)) => {
-      let name = match m.values.get("name") {
-        Some([name, ..]) => name
-        _ => "world"
-      }
-      println(@playground.greet(name))
-    }
-    Some(("echo", m)) =>
-      match m.values.get("words") {
-        Some(words) => println(words.join(" "))
-        None => println("(nothing to echo)")
-      }
-    Some(("download", m)) => run_download(m)
-    _ => println(cmd.render_help())
-  }
+  value.command
 }

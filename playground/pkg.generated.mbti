@@ -1,8 +1,7 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "zw/playground"
+package "username/playground"
 
 // Values
-pub fn greet(String) -> String
 
 // Errors
 
