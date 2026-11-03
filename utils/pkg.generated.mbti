@@ -16,7 +16,11 @@ pub fn expect_object(Json, what~ : String, path~ : @json.JsonPath) -> Map[String
 
 pub fn[T : @json.FromJson] extract(Map[String, Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
 
+pub fn[T, E] lazy_generator(() -> Result[T?, E]) -> LazyGenerator[T, E]
+
 pub fn parse_case() -> String raise CliError
+
+pub fn[T : Show] print_x(T) -> Unit raise PrintError
 
 pub fn qwen3_model_dir() -> String
 
@@ -37,7 +41,17 @@ pub(all) suberror DownloadError {
   BadRedirect(String)
 }
 
+pub(all) suberror PrintError {
+  ImportFailed(String)
+  CallFailed(String)
+}
+
 // Types and methods
+pub struct LazyGenerator[T, E] {
+  next_fn : () -> Result[T?, E]
+}
+pub fn[T, E : Error] LazyGenerator::collect(Self[T, E]) -> Array[T] raise E
+pub fn[T, E : Error] LazyGenerator::next(Self[T, E]) -> T? raise E
 
 // Type aliases
 

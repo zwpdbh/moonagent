@@ -5,10 +5,11 @@ import {
   "moonbitlang/core/debug",
   "zw/qwen3",
   "zw/torch",
+  "zw/utils",
 }
 
 // Values
-pub fn generate_text_basic_stream(model~ : @qwen3.Qwen3Model, token_ids~ : Array[Int64], max_new_tokens~ : Int32, eos_token_id~ : Int64?, device~ : String, on_token~ : (Int64) -> Unit raise @torch.TorchError) -> Array[Int64] raise @torch.TorchError
+pub fn generate_text_basic_stream(model~ : @qwen3.Qwen3Model, token_ids~ : Array[Int64], max_new_tokens~ : Int32, eos_token_id~ : Int64?, device~ : String) -> @utils.LazyGenerator[Int64, @torch.TorchError] raise @torch.TorchError
 
 pub fn generate_text_basic_stream_cache(model~ : @qwen3.Qwen3Model, token_ids~ : Array[Int64], max_new_tokens~ : Int32, eos_token_id~ : Int64?, device~ : String, on_token~ : (Int64) -> Unit raise @torch.TorchError) -> Array[Int64] raise @torch.TorchError
 
@@ -19,6 +20,7 @@ pub fn run_ch02_ex02(String) -> Unit raise Ch02Error
 // Errors
 pub(all) suberror Ch02Error {
   InvalidArgumentValue(String)
+  TorchError(@torch.TorchError)
 } derive(@debug.Debug)
 pub fn Ch02Error::output(Self, &Logger) -> Unit
 pub fn Ch02Error::to_repr(Self) -> @debug.Repr

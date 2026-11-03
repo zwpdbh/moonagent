@@ -25,7 +25,7 @@ pub(all) suberror TorchError {
   CallFailed(String)
   UnexpectedType(String)
   InvalidShape(String)
-}
+} derive(Debug)
 
 ///|
 /// Format an error with both its category and operation-specific details.
@@ -42,6 +42,11 @@ pub impl Show for TorchError with fn output(self, logger) {
 
 ///|
 pub extend TorchError with Show::{to_string, output}
+
+///|
+/// Expose the derived Debug representation explicitly.
+/// Requires derive(Debug) on the type and moonbitlang/core/debug in moon.pkg.
+pub extend TorchError with @debug.Debug::{to_repr}
 
 ///|
 /// A lightweight owner of a Python `torch.Tensor` object.

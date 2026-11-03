@@ -3,6 +3,7 @@ package "zw/torch"
 
 import {
   "Kaida-Amethyst/python",
+  "moonbitlang/core/debug",
 }
 
 // Values
@@ -85,8 +86,9 @@ pub(all) suberror TorchError {
   CallFailed(String)
   UnexpectedType(String)
   InvalidShape(String)
-}
+} derive(@debug.Debug)
 pub fn TorchError::output(Self, &Logger) -> Unit
+pub fn TorchError::to_repr(Self) -> @debug.Repr
 pub fn TorchError::to_string(Self) -> String
 pub impl Show for TorchError
 

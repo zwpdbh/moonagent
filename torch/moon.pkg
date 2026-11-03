@@ -1,5 +1,6 @@
 import {
   "Kaida-Amethyst/python",
+  "moonbitlang/core/debug",
 }
 
 supported_targets = "native"

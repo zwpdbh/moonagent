@@ -29,4 +29,5 @@ import {
   "zw/torch@0.1.0",
   "zw/qwen3@0.1.0",
   "TheWaWaR/clap@0.2.6",
+  "zw/utils@0.1.0",
 }

@@ -71,3 +71,39 @@ test "byte-level symbol conversion round-trips every byte" {
   let bytes = Bytes::from_array(byte_values[:])
   assert_eq(symbols_to_bytes(bytes_to_symbols(bytes)), bytes)
 }
+
+///|
+test "lazy_generator produces values on demand and collects them" {
+  let mut current = 0
+  let generator = lazy_generator(() => {
+    if current < 3 {
+      current += 1
+      Ok(Some(current))
+    } else {
+      Ok(None)
+    }
+  })
+  assert_eq(generator.next(), Some(1))
+  assert_eq(generator.next(), Some(2))
+  assert_eq(generator.collect(), [3])
+}
+
+///|
+suberror LazyGeneratorTestError {
+  Failure
+}
+
+///|
+test "lazy_generator propagates errors from next" {
+  let generator : LazyGenerator[Int32, LazyGeneratorTestError] = lazy_generator(() => {
+      Err(Failure)
+    },
+  )
+  let raised = try {
+    ignore(generator.next())
+    false
+  } catch {
+    Failure => true
+  }
+  assert_true(raised)
+}

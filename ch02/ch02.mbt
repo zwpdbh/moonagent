@@ -7,6 +7,7 @@ using @torch {type TorchError}
 ///|
 pub(all) suberror Ch02Error {
   InvalidArgumentValue(String)
+  TorchError(@torch.TorchError)
 } derive(Debug)
 
 ///|
@@ -15,6 +16,7 @@ pub impl Show for Ch02Error with fn output(self, logger) {
   match self {
     InvalidArgumentValue(value) =>
       logger.write_string("Variant message: " + value)
+    TorchError(error) => logger.write_string(error.to_string())
   }
 }
 
@@ -67,20 +69,34 @@ fn prepare_common(
 ///|
 pub fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
   let (model, input_ids, device, tokenizer) = prepare_common(text)
-  let generated = generate_text_basic_stream(
+
+  fn print_decoded_token(id : Int64) -> Unit raise @torch.TorchError {
+    let text = tokenizer.decode([id.to_int()]) catch {
+      _ => raise UnexpectedType("failed to decode token")
+    }
+    @utils.print_x(text) catch {
+      _ => raise UnexpectedType("failed to print token")
+    }
+  }
+
+  let stream = generate_text_basic_stream(
     model~,
     token_ids=input_ids,
     max_new_tokens=100,
     eos_token_id=Some(151645L),
     device~,
-    on_token=id => ignore(id),
   ) catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
-  let output = tokenizer.decode(generated.map(id => id.to_int())) catch {
-    _ => raise InvalidArgumentValue("failed to decode output")
+  let generated : Array[Int64] = []
+  try {
+    while stream.next() is Some(id) {
+      generated.push(id)
+      print_decoded_token(id)
+    }
+  } catch {
+    error => raise InvalidArgumentValue(error.to_string())
   }
-  println(output)
   println("\nGenerated \{generated.length()} tokens")
 }
 
@@ -111,22 +127,46 @@ pub fn generate_text_basic_stream(
   max_new_tokens~ : Int32,
   eos_token_id~ : Int64?,
   device~ : String,
-  on_token~ : (Int64) -> Unit raise TorchError,
-) -> Array[Int64] raise TorchError {
+) -> @utils.LazyGenerator[Int64, TorchError] raise TorchError {
   if token_ids.length() == 0 {
     raise InvalidShape("generation requires at least one input token")
   }
   if max_new_tokens < 0 {
     raise InvalidShape("max_new_tokens must not be negative")
   }
-  ignore(model)
-  ignore(eos_token_id)
-  ignore(on_token)
-  ignore(
-    @torch.int_tensor(data=token_ids, shape=[1, token_ids.length()]).to(device~),
-  )
 
-  abort("TODO")
+  let mut input = @torch.int_tensor(data=token_ids, shape=[
+    1,
+    token_ids.length(),
+  ]).to(device~)
+  let mut remaining = max_new_tokens
+  let mut finished = false
+
+  fn next_token() -> Result[Int64?, TorchError] {
+    if finished || remaining == 0 {
+      return Ok(None)
+    }
+    @torch.without_grad(() => {
+      let logits = @torch.select(
+        input=model.forward(input~, cache=None),
+        dim=1,
+        index=-1,
+      )
+      let next_token = @torch.argmax(input=logits, dim=-1)
+      let next_id = next_token.item().to_int64()
+      if eos_token_id is Some(eos_id) && next_id == eos_id {
+        finished = true
+        return Ok(None)
+      }
+
+      input = @torch.concat([input, next_token.reshape([1, 1])], dim=1)
+      remaining -= 1
+      Ok(Some(next_id))
+    }) catch {
+      error => Err(error)
+    }
+  }
+  @utils.lazy_generator(next_token)
 }
 
 ///|
