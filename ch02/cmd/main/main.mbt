@@ -9,9 +9,10 @@ fn main {
   match command {
     Some(Ex00) => println("Ex00 placeholder")
     Some(Ex01(text~)) => run_ex01(text) catch { error => println(error) }
-    Some(Ex03(Case01)) => println("Ex03 Case01 placeholder")
-    Some(Ex03(Case02(input~))) => println("Ex03 Case02 placeholder: \{input}")
-    None => println("No subcommand selected; use --help for usage")
+    Some(Ex03(Some(Case01))) => println("Ex03 Case01 placeholder")
+    Some(Ex03(Some(Case02(input~)))) =>
+      println("Ex03 Case02 placeholder: \{input}")
+    None | Some(Ex03(None)) => ()
   }
 }
 

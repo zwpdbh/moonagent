@@ -13,7 +13,7 @@ pub enum SubCommand {
 pub enum Command {
   Ex00
   Ex01(text~ : String)
-  Ex03(SubCommand)
+  Ex03(SubCommand?)
 }
 
 ///|
@@ -31,17 +31,21 @@ impl @clap.Value for AppArgs with fn add_value(self, name, value, _positional) -
       }
       self.command = Some(Ex01(text=value))
     }
-    Some(Ex03(Case01)) =>
+    Some(Ex03(None)) =>
+      raise @clap.ParserError::InvalidArgumentName(
+        "ex03 requires case01 or case02 before a value",
+      )
+    Some(Ex03(Some(Case01))) =>
       raise @clap.ParserError::InvalidArgumentName(
         "case01 does not accept a value: \{name}",
       )
-    Some(Ex03(Case02(..))) => {
+    Some(Ex03(Some(Case02(..)))) => {
       guard name == "input" else {
         raise @clap.ParserError::InvalidArgumentName(
           "expected input, got: \{name}",
         )
       }
-      self.command = Some(Ex03(Case02(input=value)))
+      self.command = Some(Ex03(Some(Case02(input=value))))
     }
     None =>
       raise @clap.ParserError::InvalidArgumentName(
@@ -55,11 +59,11 @@ impl @clap.Value for AppArgs with fn select_subcmd(self, name) -> AppArgs raise 
   match name {
     "ex00" => self.command = Some(Ex00)
     "ex01" => self.command = Some(Ex01(text=""))
-    "ex03" => self.command = Some(Ex03(Case01))
+    "ex03" => self.command = Some(Ex03(None))
     "case01" if self.command is Some(Ex03(_)) =>
-      self.command = Some(Ex03(Case01))
+      self.command = Some(Ex03(Some(Case01)))
     "case02" if self.command is Some(Ex03(_)) =>
-      self.command = Some(Ex03(Case02(input="")))
+      self.command = Some(Ex03(Some(Case02(input=""))))
     _ =>
       raise @clap.ParserError::InvalidSubCommandName(
         "unknown subcommand: \{name}",
