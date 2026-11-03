@@ -88,6 +88,8 @@ pub fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
   ) catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
+  let started_at = @bench.monotonic_clock_start()
+
   let generated : Array[Int64] = []
   try {
     while stream.next() is Some(id) {
@@ -97,7 +99,16 @@ pub fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
   } catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
-  println("\nGenerated \{generated.length()} tokens")
+  let elapsed_seconds = @bench.monotonic_clock_end(started_at) / 1_000_000.0
+
+  let tokens_per_second = if elapsed_seconds > 0.0 {
+    generated.length().to_double() / elapsed_seconds
+  } else {
+    0.0
+  }
+  println(
+    "\nGenerated \{generated.length()} tokens in \{elapsed_seconds} seconds (\{tokens_per_second} tokens/sec)",
+  )
 }
 
 ///|

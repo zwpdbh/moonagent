@@ -3,6 +3,7 @@ import {
   "zw/qwen3",
   "zw/utils",
   "moonbitlang/core/debug",
+  "moonbitlang/core/bench",
 }
 
 supported_targets = "native"
