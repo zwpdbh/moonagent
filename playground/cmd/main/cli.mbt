@@ -80,7 +80,6 @@ pub fn parse_args() -> Command? raise @clap.ParserError {
     prog="myapp",
     description="Command-line examples",
     subcmds={
-      "ex00": @clap.SubCommand::new(help="Show the no-argument example"),
       "ex01": @clap.SubCommand::new(
         args={
           "text": @clap.Arg::positional(
