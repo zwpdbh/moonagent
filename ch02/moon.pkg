@@ -6,6 +6,8 @@ import {
   "moonbitlang/core/bench",
   "chnlkw/moonxi-net/nparray",
   "moonbitlang/async",
+  "chnlkw/moonxi-net-gpu/tensor" @gt,
+  "chnlkw/moonxi-net-gpu/cuda",
 }
 
 warnings = "-unused_package"

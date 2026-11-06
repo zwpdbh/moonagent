@@ -1,5 +1,4 @@
 ///|
-using @nparray {type NpArray}
 
 ///|
 pub(all) suberror NativeQwen3Error {
@@ -20,18 +19,18 @@ pub extend NativeQwen3Error with Show::{to_string, output}
 pub extend NativeQwen3Error with @debug.Debug::{to_repr}
 
 ///|
-priv struct NativeKVLayerCache {
-  keys : Ref[NpArray?]
-  values : Ref[NpArray?]
+priv struct NativeKVLayerCache[T] {
+  keys : Ref[T?]
+  values : Ref[T?]
 }
 
 ///|
-pub struct NativeKVCache {
-  priv layers : Array[NativeKVLayerCache]
+pub struct NativeKVCache[T] {
+  priv layers : Array[NativeKVLayerCache[T]]
 }
 
 ///|
-pub fn NativeKVCache::new(n_layers~ : Int32) -> NativeKVCache {
+pub fn[T] NativeKVCache::new(n_layers~ : Int32) -> NativeKVCache[T] {
   {
     layers: Array::makei(n_layers, _ => {
       keys: { val: None, },
@@ -41,30 +40,32 @@ pub fn NativeKVCache::new(n_layers~ : Int32) -> NativeKVCache {
 }
 
 ///|
-/// Qwen3 weights and reusable RoPE tables backed by native F32 CPU tensors.
-pub struct NativeQwen3Model {
+/// Qwen3 weights and reusable RoPE tables backed by native F32 tensors.
+pub struct NativeQwen3Model[T] {
   config : Config
-  weights : Map[String, NpArray]
-  cos : NpArray
-  sin : NpArray
+  weights : Map[String, T]
+  cos : T
+  sin : T
   mut current_pos : Int32
 }
 
 ///|
-pub fn NativeQwen3Model::new_cache(self : NativeQwen3Model) -> NativeKVCache {
+pub fn[T] NativeQwen3Model::new_cache(
+  self : NativeQwen3Model[T],
+) -> NativeKVCache[T] {
   NativeKVCache::new(n_layers=self.config.num_hidden_layers)
 }
 
 ///|
-pub fn NativeQwen3Model::reset_kv_cache(self : NativeQwen3Model) -> Unit {
+pub fn[T] NativeQwen3Model::reset_kv_cache(self : NativeQwen3Model[T]) -> Unit {
   self.current_pos = 0
 }
 
 ///|
-fn NativeQwen3Model::weight(
-  self : NativeQwen3Model,
+fn[T] NativeQwen3Model::weight(
+  self : NativeQwen3Model[T],
   name : String,
-) -> NpArray raise NativeQwen3Error {
+) -> T raise NativeQwen3Error {
   guard self.weights.get(name) is Some(weight) else {
     raise InvalidModel("missing Qwen3 weight: \{name}")
   }
@@ -72,25 +73,25 @@ fn NativeQwen3Model::weight(
 }
 
 ///|
-fn NativeQwen3Model::linear(
-  self : NativeQwen3Model,
-  input : NpArray,
+fn[T : NativeTensor] NativeQwen3Model::linear(
+  self : NativeQwen3Model[T],
+  input : T,
   weight_name : String,
-) -> NpArray raise NativeQwen3Error {
+) -> T raise NativeQwen3Error {
   input.linear(self.weight(weight_name))
 }
 
 ///|
-fn NativeQwen3Model::norm(
-  self : NativeQwen3Model,
-  input : NpArray,
+fn[T : NativeTensor] NativeQwen3Model::norm(
+  self : NativeQwen3Model[T],
+  input : T,
   weight_name : String,
-) -> NpArray raise NativeQwen3Error {
+) -> T raise NativeQwen3Error {
   input.rms_norm(self.weight(weight_name), eps=self.config.rms_norm_eps)
 }
 
 ///|
-fn make_native_rope_tables(config : Config) -> (NpArray, NpArray) {
+fn[T : NativeTensor] make_native_rope_tables(config : Config) -> (T, T) {
   let context_length = config.max_position_embeddings
   let head_dim = config.head_dim
   let half_dim = head_dim / 2
@@ -112,14 +113,17 @@ fn make_native_rope_tables(config : Config) -> (NpArray, NpArray) {
     Float::from_double(@math.sin(angle))
   })
   let shape = [context_length, head_dim]
-  (NpArray::from_host(cos_data, shape), NpArray::from_host(sin_data, shape))
+  (
+    NativeTensor::from_host(cos_data, shape),
+    NativeTensor::from_host(sin_data, shape),
+  )
 }
 
 ///|
 /// Load the cached Qwen3 checkpoint as native F32 tensors without Python.
-pub async fn NativeQwen3Model::load(
+pub async fn[T : NativeTensor] NativeQwen3Model::load(
   model_dir : String,
-) -> NativeQwen3Model raise NativeQwen3Error {
+) -> NativeQwen3Model[T] raise NativeQwen3Error {
   let config_text = @fs.read_file_to_string(model_dir + "/config.json") catch {
     _ => raise InvalidModel("cannot read Qwen3 config.json")
   }
@@ -137,7 +141,10 @@ pub async fn NativeQwen3Model::load(
       error =>
         raise InvalidModel("cannot read tensor \{name}: \{error.to_string()}")
     }
-    weights.set(name, NpArray::from_host(FixedArray::from_array(values), shape))
+    weights.set(
+      name,
+      NativeTensor::from_host(FixedArray::from_array(values), shape),
+    )
   }
   if !weights.contains("lm_head.weight") {
     weights.set("lm_head.weight", weights["model.embed_tokens.weight"])
@@ -147,12 +154,12 @@ pub async fn NativeQwen3Model::load(
 }
 
 ///|
-fn NativeQwen3Model::rope(
-  self : NativeQwen3Model,
-  input : NpArray,
+fn[T : NativeTensor] NativeQwen3Model::rope(
+  self : NativeQwen3Model[T],
+  input : T,
   position : Int32,
   num_tokens : Int32,
-) -> NpArray {
+) -> T {
   let head_dim = self.config.head_dim
   let half_dim = head_dim / 2
   let cos = self.cos
@@ -165,17 +172,17 @@ fn NativeQwen3Model::rope(
     .unsqueeze(dim=0)
   let first = input.narrow(dim=-1, start=0, length=half_dim)
   let second = input.narrow(dim=-1, start=half_dim, length=half_dim)
-  let rotated = NpArray::concat([second.scale(-1.0F), first], dim=-1)
+  let rotated = NativeTensor::concat([second.scale(-1.0F), first], dim=-1)
   input.mul_elem(cos) + rotated.mul_elem(sin)
 }
 
 ///|
-fn NativeQwen3Model::causal_mask(
-  self : NativeQwen3Model,
+fn[T : NativeTensor] NativeQwen3Model::causal_mask(
+  self : NativeQwen3Model[T],
   position : Int32,
   num_tokens : Int32,
   total_tokens : Int32,
-) -> NpArray {
+) -> T {
   ignore(self)
   let data = FixedArray::make(num_tokens * total_tokens, 0.0F)
   for row in 0..<num_tokens {
@@ -183,19 +190,19 @@ fn NativeQwen3Model::causal_mask(
       data[row * total_tokens + column] = 1.0F
     }
   }
-  NpArray::from_host(data, [1, 1, num_tokens, total_tokens])
+  NativeTensor::from_host(data, [1, 1, num_tokens, total_tokens])
 }
 
 ///|
-fn NativeQwen3Model::attention(
-  self : NativeQwen3Model,
-  input : NpArray,
-  mask : NpArray,
+fn[T : NativeTensor] NativeQwen3Model::attention(
+  self : NativeQwen3Model[T],
+  input : T,
+  mask : T,
   position : Int32,
   layer : Int32,
-  cache : NativeKVLayerCache?,
-) -> NpArray raise NativeQwen3Error {
-  let shape = input.shape.shape
+  cache : NativeKVLayerCache[T]?,
+) -> T raise NativeQwen3Error {
+  let shape = input.shape()
   let batch = shape[0]
   let num_tokens = shape[1]
   let num_heads = self.config.num_attention_heads
@@ -232,8 +239,8 @@ fn NativeQwen3Model::attention(
       let (keys, values) = match (layer.keys.val, layer.values.val) {
         (Some(previous_keys), Some(previous_values)) =>
           (
-            NpArray::concat([previous_keys, keys_new], dim=2),
-            NpArray::concat([previous_values, values_new], dim=2),
+            NativeTensor::concat([previous_keys, keys_new], dim=2),
+            NativeTensor::concat([previous_values, values_new], dim=2),
           )
         _ => (keys_new, values_new)
       }
@@ -263,11 +270,11 @@ fn NativeQwen3Model::attention(
 }
 
 ///|
-fn NativeQwen3Model::mlp(
-  self : NativeQwen3Model,
-  input : NpArray,
+fn[T : NativeTensor] NativeQwen3Model::mlp(
+  self : NativeQwen3Model[T],
+  input : T,
   layer : Int32,
-) -> NpArray raise NativeQwen3Error {
+) -> T raise NativeQwen3Error {
   let prefix = "model.layers.\{layer}.mlp"
   let gate = self.linear(input, prefix + ".gate_proj.weight")
   let up = self.linear(input, prefix + ".up_proj.weight")
@@ -276,11 +283,11 @@ fn NativeQwen3Model::mlp(
 
 ///|
 /// Run a native F32 forward pass over integer token IDs.
-pub fn NativeQwen3Model::forward(
-  self : NativeQwen3Model,
+pub fn[T : NativeTensor] NativeQwen3Model::forward(
+  self : NativeQwen3Model[T],
   input~ : Array[Int32],
-  cache~ : NativeKVCache?,
-) -> NpArray raise NativeQwen3Error {
+  cache~ : NativeKVCache[T]?,
+) -> T raise NativeQwen3Error {
   if input.is_empty() {
     raise InvalidModel("Qwen3 input requires at least one token")
   }

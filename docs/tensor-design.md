@@ -1,6 +1,15 @@
-# Torch tensor design principles
+# Tensor design principles
 
-## Purpose
+## Native Qwen3 backend
+
+Chapter 2 now uses `NativeTensor` to run the same Qwen3 model and generation
+logic on `NpArray` (CPU) and `GpuTensor` (CUDA). Generic tensor operations live in
+`moonxi-net`; Qwen3 architecture, checkpoint loading, KV caching, tokenization,
+and generation remain in `moonagent`. Native execution uses F32 and does not
+initialize CPython. The PyTorch backend described below remains available as a
+reference implementation.
+
+## Torch purpose
 
 The `zw/torch` package provides MoonBit access to real PyTorch tensors and
 operations through `python.mbt` and the CPython C API. Qwen-specific architecture

@@ -11,6 +11,8 @@ import {
   "chnlkw/moonxi-net/nparray",
   "zw/safetensors",
   "moonbitlang/async",
+  "chnlkw/moonxi-net-gpu/tensor" @gt,
+  "chnlkw/moonxi-net-gpu/cuda",
 }
 
 warnings = "-unused_package"

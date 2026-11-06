@@ -29,5 +29,4 @@ import {
   "moonbitlang/x@0.5.5",
   "moonbitlang/async@0.22.4",
   "moonbitlang/regexp@0.3.6",
-  "Kaida-Amethyst/python@0.1.6",
 }

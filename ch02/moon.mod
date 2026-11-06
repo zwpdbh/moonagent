@@ -32,4 +32,5 @@ import {
   "zw/utils@0.1.0",
   "chnlkw/moonxi-net@0.1.1",
   "moonbitlang/async@0.22.4",
+  "chnlkw/moonxi-net-gpu@0.1.1",
 }

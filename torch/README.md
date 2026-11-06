@@ -1,5 +1,10 @@
 # Using PyTorch from MoonBit
 
+> Chapter 2 now defaults to the native `moonxi-net` CPU/CUDA backend. This
+> document describes the optional PyTorch reference backend used by `zw/torch`
+> and the training examples. Native Qwen3 inference does not require the Python
+> environment described below.
+
 This workspace supports following PyTorch-based ML and LLM material while
 writing the model and surrounding logic in MoonBit. `zw/torch` delegates the
 numerical engine to real PyTorch through `python.mbt` and CPython; it does not

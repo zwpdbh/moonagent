@@ -2,6 +2,7 @@ import {
   "TheWaWaR/clap",
   "moonbitlang/core/env",
   "zw/ch02",
+  "moonbitlang/async",
 }
 
 pkgtype(kind: "executable")

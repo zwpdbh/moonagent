@@ -2,7 +2,7 @@
 /// Entry point for the CLI or runnable program in this template.
 /// Keep main focused; move logic into the library package.
 /// Run with `moon run cmd/main` from the project root.
-fn main {
+async fn main {
   let command = parse_args() catch {
     error => {
       println(error)

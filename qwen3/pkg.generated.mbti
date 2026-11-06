@@ -2,6 +2,7 @@
 package "zw/qwen3"
 
 import {
+  "chnlkw/moonxi-net-gpu/tensor",
   "chnlkw/moonxi-net/nparray",
   "moonbitlang/core/debug",
   "zw/torch",
@@ -35,6 +36,9 @@ pub(all) suberror TokenizerError {
   NoCorrespondingVocab(String)
   DecodeError(Int32)
 }
+pub fn TokenizerError::output(Self, &Logger) -> Unit
+pub fn TokenizerError::to_string(Self) -> String
+pub impl Show for TokenizerError
 
 // Types and methods
 pub struct Config {
@@ -75,22 +79,22 @@ pub struct KVCache {
 }
 pub fn KVCache::new(n_layers~ : Int32) -> Self
 
-pub struct NativeKVCache {
+pub struct NativeKVCache[T] {
   // private fields
 }
-pub fn NativeKVCache::new(n_layers~ : Int32) -> Self
+pub fn[T] NativeKVCache::new(n_layers~ : Int32) -> Self[T]
 
-pub struct NativeQwen3Model {
+pub struct NativeQwen3Model[T] {
   config : Config
-  weights : Map[String, @nparray.NpArray]
-  cos : @nparray.NpArray
-  sin : @nparray.NpArray
+  weights : Map[String, T]
+  cos : T
+  sin : T
   mut current_pos : Int32
 }
-pub fn NativeQwen3Model::forward(Self, input~ : Array[Int32], cache~ : NativeKVCache?) -> @nparray.NpArray raise NativeQwen3Error
-pub async fn NativeQwen3Model::load(String) -> Self raise NativeQwen3Error
-pub fn NativeQwen3Model::new_cache(Self) -> NativeKVCache
-pub fn NativeQwen3Model::reset_kv_cache(Self) -> Unit
+pub fn[T : NativeTensor] NativeQwen3Model::forward(Self[T], input~ : Array[Int32], cache~ : NativeKVCache[T]?) -> T raise NativeQwen3Error
+pub async fn[T : NativeTensor] NativeQwen3Model::load(String) -> Self[T] raise NativeQwen3Error
+pub fn[T] NativeQwen3Model::new_cache(Self[T]) -> NativeKVCache[T]
+pub fn[T] NativeQwen3Model::reset_kv_cache(Self[T]) -> Unit
 
 pub struct Qwen3Model {
   config : Config
@@ -114,3 +118,27 @@ pub fn Tokenizer::new(String) -> Self raise TokenizerError
 // Type aliases
 
 // Traits
+pub(open) trait NativeTensor : Add {
+  fn from_host(FixedArray[Float], Array[Int32]) -> Self
+  fn shape(Self) -> Array[Int32]
+  fn view(Self, Array[Int32]) -> Self
+  fn permute(Self, Array[Int32]) -> Self
+  fn unsqueeze(Self, dim~ : Int32) -> Self
+  fn narrow(Self, dim~ : Int32, start~ : Int32, length~ : Int32) -> Self
+  fn select(Self, dim~ : Int32, index~ : Int32) -> Self
+  fn concat(Array[Self], dim~ : Int32) -> Self
+  fn repeat_interleave(Self, repeats~ : Int32, dim~ : Int32) -> Self
+  fn batched_matmul(Self, Self) -> Self
+  fn linear(Self, Self) -> Self
+  fn softmax_last(Self) -> Self
+  fn embedding(Self, Array[Int32]) -> Self
+  fn silu(Self) -> Self
+  fn rms_norm(Self, Self, eps~ : Float) -> Self
+  fn masked_fill(Self, Self, value~ : Float) -> Self
+  fn argmax_last(Self) -> Self
+  fn item_int(Self) -> Int32
+  fn mul_elem(Self, Self) -> Self
+  fn scale(Self, Float) -> Self
+}
+pub impl NativeTensor for @tensor.GpuTensor
+pub impl NativeTensor for @nparray.NpArray

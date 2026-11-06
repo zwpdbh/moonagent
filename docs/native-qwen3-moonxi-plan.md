@@ -197,6 +197,17 @@ paths produce `"<think>\nOkay,"`; no Python runtime is used.
 Goal: run the same native model on `GpuTensor` using the standard MoonBit
 compiler and externally built CUDA kernels.
 
+**Status: completed for correctness.** CUDA kernels and FFI wrappers now cover
+Qwen3 layout, arithmetic, normalization, masking, embedding, and argmax. The
+`NativeTensor` trait shares the model and generation logic between `NpArray` and
+`GpuTensor`. Real-checkpoint tests pass for both basic and cached CUDA streams.
+
+The initial layout implementation transfers host-generated integer index maps
+and frees them synchronously; it is not optimized. A complete 100-token native
+CUDA basic run took 821 seconds (0.12 tokens/sec). Replacing index maps with
+specialized kernels, reducing synchronization, and improving allocation/cache
+behavior are necessary performance follow-ups.
+
 ### Changes in `moonxi-net`
 
 1. Implement CUDA equivalents of the generic operations introduced in phase 2.
@@ -226,6 +237,12 @@ compiler and externally built CUDA kernels.
   bottlenecks before optimizing.
 
 ## Phase 5 — Make native inference the default
+
+**Status: completed.** The chapter CLI selects native CUDA when a device is
+available and native CPU otherwise. Native stdout replaced the Python-based
+streaming print helper, and no Python path setup is used. The roadmap and tensor
+documentation describe the native architecture. Both workspaces pass clean
+checks; `moonagent` passes 219 release tests and the fork passes 123 tests.
 
 1. Switch chapter 2 CLI examples to the native backend.
 2. Remove Python-path setup, `without_grad`, and Python device detection from the
@@ -270,8 +287,8 @@ README during phase 1.
   data. Preallocated caches are an optimization after correctness.
 - Native CPU matmul and GPU F32 kernels may be slower than PyTorch BF16. This is
   acceptable for the initial port.
-- The fork has pre-existing deprecation warnings under the current compiler.
-  Track and clean them separately from functional changes.
+- The fork's deprecation warnings have been cleaned up; both workspaces
+  currently pass `moon check --target native` without warnings.
 
 ## Completion criteria
 

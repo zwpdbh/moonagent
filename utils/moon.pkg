@@ -6,7 +6,7 @@ import {
   "moonbitlang/core/string",
   "moonbitlang/core/json",
   "moonbitlang/regexp",
-  "Kaida-Amethyst/python",
+  "moonbitlang/x/encoding",
 }
 
 supported_targets = "native"

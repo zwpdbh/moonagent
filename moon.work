@@ -9,4 +9,5 @@ members = [
   "../forked/python.mbt",
   "../forked/clap.mbt",
   "../forked/moonxi-net/moonxi-net",
+  "../forked/moonxi-net/moonxi-net-gpu",
 ]

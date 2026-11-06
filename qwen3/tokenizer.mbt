@@ -27,6 +27,22 @@ pub(all) suberror TokenizerError {
 }
 
 ///|
+pub impl Show for TokenizerError with fn output(self, logger) {
+  match self {
+    InvalidFormat(message) => logger.write_string("invalid format: " + message)
+    UnknownToken(id) => logger.write_string("unknown token: \{id}")
+    InvalidModel(message) => logger.write_string("invalid model: " + message)
+    BpeError(message) => logger.write_string("BPE error: " + message)
+    NoCorrespondingVocab(message) =>
+      logger.write_string("no corresponding vocabulary entry: " + message)
+    DecodeError(id) => logger.write_string("decode error for token: \{id}")
+  }
+}
+
+///|
+pub extend TokenizerError with Show::{to_string, output}
+
+///|
 priv struct SpecialControlToken {
   id : Int32
   content : String

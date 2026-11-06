@@ -30,67 +30,46 @@ pub extend Ch02Error with Show::{to_string, output}
 pub extend Ch02Error with @debug.Debug::{to_repr}
 
 ///|
-/// Load the MoonBit Qwen3 implementation from an existing model cache.
-fn load_cached_qwen3(
-  model_dir~ : String,
-  device~ : String,
-) -> Qwen3Model raise TorchError {
-  @qwen3.Qwen3Model::load(model_dir, device~)
-}
-
-///|
-fn prepare_common(
+fn prepare_native_prompt(
   text : String,
-) -> (@qwen3.Qwen3Model, Array[Int64], String, @qwen3.Tokenizer) raise Ch02Error {
-  let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
-  @torch.add_python_path(
-    "/home/zw/code/moonbit_programming/moonagent/.venv/lib/python3.12/site-packages",
+) -> (Array[Int32], @qwen3.Tokenizer) raise Ch02Error {
+  let tokenizer = @qwen3.Tokenizer::load(
+    "/home/zw/.cache/models/Qwen/Qwen3-0.6B/tokenizer.json",
   ) catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
-  let device = @torch.cuda_is_available() catch {
-    error => raise InvalidArgumentValue(error.to_string())
-  }
-  let device = if device { "cuda" } else { "cpu" }
-  println("Using device: \{device}")
-  let model = load_cached_qwen3(model_dir~, device~) catch {
-    error => raise InvalidArgumentValue(error.to_string())
-  }
-  let tokenizer = @qwen3.Tokenizer::load(model_dir + "/tokenizer.json") catch {
-    _ => raise InvalidArgumentValue("failed to load tokenizer")
-  }
   let prompt = "<|im_start|>user\n\{text}<|im_end|>\n<|im_start|>assistant\n"
-  let input_ids = tokenizer.encode(prompt).map(id => id.to_int64()) catch {
-      _ => raise InvalidArgumentValue("failed to encode prompt")
-    }
-  (model, input_ids, device, tokenizer)
+  let input_ids = tokenizer.encode(prompt) catch {
+    error => raise InvalidArgumentValue(error.to_string())
+  }
+  (input_ids, tokenizer)
 }
 
 ///|
-pub fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
-  let (model, input_ids, device, tokenizer) = prepare_common(text)
-
-  fn print_decoded_token(id : Int64) -> Unit raise @torch.TorchError {
-    let text = tokenizer.decode([id.to_int()]) catch {
-      _ => raise UnexpectedType("failed to decode token")
+async fn[T : @qwen3.NativeTensor] run_native_basic(
+  model : @qwen3.NativeQwen3Model[T],
+  input_ids : Array[Int32],
+  tokenizer : @qwen3.Tokenizer,
+) -> Unit raise Ch02Error {
+  async fn print_decoded_token(id : Int32) -> Unit raise Ch02Error {
+    let text = tokenizer.decode([id]) catch {
+      error => raise InvalidArgumentValue(error.to_string())
     }
     @utils.print_x(text) catch {
-      _ => raise UnexpectedType("failed to print token")
+      error => raise InvalidArgumentValue(error.to_string())
     }
   }
 
-  let stream = generate_text_basic_stream(
+  let stream = generate_native_text_basic_stream(
     model~,
     token_ids=input_ids,
     max_new_tokens=100,
-    eos_token_id=Some(151645L),
-    device~,
+    eos_token_id=Some(151645),
   ) catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
   let started_at = @bench.monotonic_clock_start()
-
-  let generated : Array[Int64] = []
+  let generated : Array[Int32] = []
   try {
     while stream.next() is Some(id) {
       generated.push(id)
@@ -100,7 +79,6 @@ pub fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
     error => raise InvalidArgumentValue(error.to_string())
   }
   let elapsed_seconds = @bench.monotonic_clock_end(started_at) / 1_000_000.0
-
   let tokens_per_second = if elapsed_seconds > 0.0 {
     generated.length().to_double() / elapsed_seconds
   } else {
@@ -112,23 +90,72 @@ pub fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
 }
 
 ///|
-pub fn run_ch02_ex02(text : String) -> Unit raise Ch02Error {
-  let (model, input_ids, device, tokenizer) = prepare_common(text)
-  let generated = generate_text_basic_stream_cache(
+pub async fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
+  let (input_ids, tokenizer) = prepare_native_prompt(text)
+  let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
+  if @cuda.device_count() > 0 {
+    println("Using device: cuda")
+    @cuda.gpu_init(0)
+    let model : @qwen3.NativeQwen3Model[@gt.GpuTensor] = @qwen3.NativeQwen3Model::load(
+      model_dir,
+    ) catch {
+      error => raise InvalidArgumentValue(error.to_string())
+    }
+    run_native_basic(model, input_ids, tokenizer)
+  } else {
+    println("Using device: cpu")
+    let model : @qwen3.NativeQwen3Model[@nparray.NpArray] = @qwen3.NativeQwen3Model::load(
+      model_dir,
+    ) catch {
+      error => raise InvalidArgumentValue(error.to_string())
+    }
+    run_native_basic(model, input_ids, tokenizer)
+  }
+}
+
+///|
+fn[T : @qwen3.NativeTensor] run_native_cached(
+  model : @qwen3.NativeQwen3Model[T],
+  input_ids : Array[Int32],
+  tokenizer : @qwen3.Tokenizer,
+) -> Unit raise Ch02Error {
+  let generated = generate_native_text_basic_stream_cache(
     model~,
     token_ids=input_ids,
     max_new_tokens=100,
-    eos_token_id=Some(151645L),
-    device~,
-    on_token=id => ignore(id),
-  ) catch {
+    eos_token_id=Some(151645),
+  ).collect() catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
-  let output = tokenizer.decode(generated.map(id => id.to_int())) catch {
-    _ => raise InvalidArgumentValue("failed to decode output")
+  let output = tokenizer.decode(generated) catch {
+    error => raise InvalidArgumentValue(error.to_string())
   }
   println(output)
   println("\nGenerated \{generated.length()} tokens")
+}
+
+///|
+pub async fn run_ch02_ex02(text : String) -> Unit raise Ch02Error {
+  let (input_ids, tokenizer) = prepare_native_prompt(text)
+  let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
+  if @cuda.device_count() > 0 {
+    println("Using device: cuda")
+    @cuda.gpu_init(0)
+    let model : @qwen3.NativeQwen3Model[@gt.GpuTensor] = @qwen3.NativeQwen3Model::load(
+      model_dir,
+    ) catch {
+      error => raise InvalidArgumentValue(error.to_string())
+    }
+    run_native_cached(model, input_ids, tokenizer)
+  } else {
+    println("Using device: cpu")
+    let model : @qwen3.NativeQwen3Model[@nparray.NpArray] = @qwen3.NativeQwen3Model::load(
+      model_dir,
+    ) catch {
+      error => raise InvalidArgumentValue(error.to_string())
+    }
+    run_native_cached(model, input_ids, tokenizer)
+  }
 }
 
 ///|
@@ -235,15 +262,15 @@ pub fn generate_text_basic_stream_cache(
 }
 
 ///|
-fn native_next_id(logits : @nparray.NpArray) -> Int32 {
-  let sequence_length = logits.shape.shape[1]
-  logits.select(dim=1, index=sequence_length - 1).argmax_last().data[0].to_int()
+fn[T : @qwen3.NativeTensor] native_next_id(logits : T) -> Int32 {
+  let sequence_length = logits.shape()[1]
+  logits.select(dim=1, index=sequence_length - 1).argmax_last().item_int()
 }
 
 ///|
-/// Generate greedily with native CPU tensors and no KV cache.
-pub fn generate_native_text_basic_stream(
-  model~ : @qwen3.NativeQwen3Model,
+/// Generate greedily with native tensors and no KV cache.
+pub fn[T : @qwen3.NativeTensor] generate_native_text_basic_stream(
+  model~ : @qwen3.NativeQwen3Model[T],
   token_ids~ : Array[Int32],
   max_new_tokens~ : Int32,
   eos_token_id~ : Int32?,
@@ -279,9 +306,9 @@ pub fn generate_native_text_basic_stream(
 }
 
 ///|
-/// Generate greedily with native CPU tensors and a KV cache.
-pub fn generate_native_text_basic_stream_cache(
-  model~ : @qwen3.NativeQwen3Model,
+/// Generate greedily with native tensors and a KV cache.
+pub fn[T : @qwen3.NativeTensor] generate_native_text_basic_stream_cache(
+  model~ : @qwen3.NativeQwen3Model[T],
   token_ids~ : Array[Int32],
   max_new_tokens~ : Int32,
   eos_token_id~ : Int32?,
@@ -295,7 +322,7 @@ pub fn generate_native_text_basic_stream_cache(
 
   let cache = model.new_cache()
   let mut next_input = Some(token_ids)
-  let mut logits : @nparray.NpArray? = None
+  let mut logits : T? = None
   let mut remaining = max_new_tokens
   let mut initialized = false
   fn next_token() -> Result[Int32?, @qwen3.NativeQwen3Error] {

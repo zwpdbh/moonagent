@@ -1,7 +1,9 @@
 ///|
 async test "native Qwen3 forward predicts the first chapter token" {
   let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
-  let model = NativeQwen3Model::load(model_dir)
+  let model : NativeQwen3Model[@nparray.NpArray] = NativeQwen3Model::load(
+    model_dir,
+  )
   let tokenizer = Tokenizer::load(model_dir + "/tokenizer.json") catch {
     _ => abort("failed to load tokenizer")
   }
@@ -10,9 +12,12 @@ async test "native Qwen3 forward predicts the first chapter token" {
     _ => abort("failed to encode prompt")
   }
   let logits = model.forward(input~, cache=None)
-  assert_eq(logits.shape.shape[0], 1)
-  assert_eq(logits.shape.shape[1], input.length())
-  assert_eq(logits.shape.shape[2], 151936)
-  let next_id = logits.select(dim=1, index=input.length() - 1).argmax_last().data[0].to_int()
+  let shape = NativeTensor::shape(logits)
+  assert_eq(shape[0], 1)
+  assert_eq(shape[1], input.length())
+  assert_eq(shape[2], 151936)
+  let next_id = NativeTensor::item_int(
+    logits.select(dim=1, index=input.length() - 1).argmax_last(),
+  )
   assert_eq(next_id, 151667)
 }

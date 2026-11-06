@@ -20,7 +20,7 @@ pub fn[T, E] lazy_generator(() -> Result[T?, E]) -> LazyGenerator[T, E]
 
 pub fn parse_case() -> String raise CliError
 
-pub fn[T : Show] print_x(T) -> Unit raise PrintError
+pub async fn[T : Show] print_x(T) -> Unit raise PrintError
 
 pub fn qwen3_model_dir() -> String
 
@@ -42,9 +42,11 @@ pub(all) suberror DownloadError {
 }
 
 pub(all) suberror PrintError {
-  ImportFailed(String)
-  CallFailed(String)
+  WriteFailed(String)
 }
+pub fn PrintError::output(Self, &Logger) -> Unit
+pub fn PrintError::to_string(Self) -> String
+pub impl Show for PrintError
 
 // Types and methods
 pub struct LazyGenerator[T, E] {

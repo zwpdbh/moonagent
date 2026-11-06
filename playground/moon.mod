@@ -28,4 +28,5 @@ description = ""
 import {
   "TheWaWaR/clap@0.2.6",
   "zw/ch02@0.1.0",
+  "moonbitlang/async@0.22.4",
 }
