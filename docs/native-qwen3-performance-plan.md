@@ -13,6 +13,177 @@ existing CPU/CUDA and basic/cached generation tests.
 
 Related implementation plan: `docs/native-qwen3-moonxi-plan.md`.
 
+## Initial profile results
+
+Opt-in profiling is implemented in
+`moonxi-net-gpu/tensor/llm_profile.mbt`. It records operation counts, host time,
+CUDA-event time, index volume, and allocation volume. CUDA-event mode
+synchronizes each measured operation, so these measurements describe the
+instrumented run and should not be treated as uninstrumented kernel benchmarks.
+
+Run a short profile with:
+
+```bash
+MOONXI_LLM_PROFILE=1 MOONXI_MAX_TOKENS=4 \
+  moon run playground/cmd/main --target native --release -- \
+  ex02 "Explain large language models."
+```
+
+Set `MOONXI_DEVICE=cpu` for the native CPU total. The default device remains
+automatic CUDA selection when available.
+
+### Four-token totals
+
+| Backend and mode | Seconds | Tokens/sec |
+| --- | ---: | ---: |
+| Native CUDA basic | 4.957 | 0.807 |
+| Native CUDA cached | 5.020 | 0.797 |
+| Native CPU basic | 20.834 | 0.192 |
+| Native CPU cached | 20.778 | 0.193 |
+
+These are short, non-warmed runs used to identify overhead, not stable
+performance benchmarks. Four tokens are too few to show the expected basic/cache
+algorithmic difference.
+
+### Instrumented CUDA cached breakdown
+
+The latest four-token cached profile used 5.020 seconds in total. Important host
+and CUDA entries were:
+
+| Entry | Time | Share of total |
+| --- | ---: | ---: |
+| Gather host total | 4380.7 ms | 87.3% |
+| Gather index construction | 3746.6 ms | 74.6% |
+| Gather kernel CUDA events | 272.3 ms | 5.4% |
+| Linear CUDA events | 192.7 ms | 3.8% |
+| RMSNorm CUDA events | 125.7 ms | 2.5% |
+| Batched matmul CUDA events | 55.3 ms | 1.1% |
+| Tensor allocation host time | 78.2 ms | 1.6% |
+| Gather index H2D host time | 30.5 ms | 0.6% |
+| Gather index free host time | 5.3 ms | 0.1% |
+
+Host categories overlap and CUDA-event categories synchronize work, so do not sum
+these rows into a separate total. They identify where to optimize first.
+
+The same run recorded:
+
+- 1,684 generic gather calls.
+- 28,161,536 generated gather indices.
+- 112,646,144 bytes of gather-index H2D traffic.
+- 1,684 index-buffer allocations and frees.
+- 5,060 tensor allocations, representing 445,740,048 bytes allocated over the
+  run (cumulative allocation volume, not peak memory).
+
+### Conclusions that replace earlier hypotheses
+
+1. **Host index construction is the dominant measured cost.** Direct layout
+   kernels or cached index maps should come before numerical micro-optimization.
+2. **Index H2D transfer and immediate frees are small in this profile.** They are
+   worth removing as part of direct kernels, but the current data does not show
+   them as the primary bottleneck.
+3. **Output allocation is visible but secondary.** Workspace reuse remains useful
+   after the dominant host indexing work is removed.
+4. **Linear and RMSNorm kernels are the next largest arithmetic contributors.**
+   Their CUDA-event timings justify later kernel work, but not before layout
+   overhead is addressed.
+5. **Four-token basic and cached totals are nearly equal.** Longer fixed-token
+   runs are required to evaluate cache benefits.
+
+## Direct layout kernel result
+
+Phase C's direct layout implementation is now working. The shared helper is
+`moonxi-net-gpu/tensor/llm.mbt:98`; the coordinate-computing CUDA kernel is
+`moonxi-net-gpu/cuda/cuda_kernels.cu:2700`.
+
+The direct kernel handles:
+
+- `permute` (`llm.mbt:140`).
+- `narrow` (`llm.mbt:179`).
+- `expand` (`llm.mbt:258`).
+- `repeat_interleave` (`llm.mbt:271`).
+
+Each call transfers only a fixed 64-byte metadata record containing the
+operation, shapes, axes, and dimensions. Source offsets are computed by GPU
+threads. The previous per-element host index array is not constructed. The old
+gather helper remains public as a reference implementation.
+
+### Measured four-token improvement
+
+| Mode | Generic gather | Direct layout | Speedup |
+| --- | ---: | ---: | ---: |
+| CUDA basic | 4.957 s | 0.305 s | 16.2× |
+| CUDA cached | 5.020 s | 0.414 s | 12.1× |
+
+The direct cached profile still processes the same 28,161,536 output elements,
+but reports 1,684 direct-layout calls and no generic gather calls. Its
+direct-layout CUDA-event total was 19.9 ms, versus 272.3 ms for gather CUDA events
+in the earlier instrumented profile. The metadata volume is 107,776 bytes over
+1,684 calls, replacing 112.6 MB of per-element index traffic.
+
+These short runs demonstrate that the host-indexing bottleneck has been removed.
+They do not provide a new result for the original 100-token workload; that should
+be rerun after further allocation/cache work. The next priorities are longer
+basic/cache comparisons, safe workspace allocation, and the remaining RMSNorm,
+linear, and attention-kernel costs.
+
+Correctness after the change: `moonagent` passes 219 release tests and the fork
+passes 123 tests, with clean `moon check` results in both workspaces.
+
+## Hundred-token comparison with Rust/Candle
+
+The original 100-token workload has now been rerun after direct layout
+optimization. All implementations used release mode, the same prompt, and the
+same requested token count. Model loading was excluded from each generation
+timer, and the programs ran sequentially on the RTX 3090.
+
+| Implementation | Basic seconds | Basic tokens/sec | Cached seconds | Cached tokens/sec |
+| --- | ---: | ---: | ---: | ---: |
+| Native MoonBit, F32 | 40.636 | 2.461 | 30.882 | 3.238 |
+| Rust/Candle, BF16 | 2.470 | about 40 | 2.170 | about 46 |
+
+Rust/Candle is therefore about 16.5× faster on basic generation and 14.2× faster
+on cached generation in this comparison. The native basic result is 20.2× faster
+than its original 821-second baseline, but it remains far from the Rust
+implementation.
+
+The generated text is not identical across all implementations. The current
+comparison measures runtime for the same workload, not numerical equivalence
+between F32 native execution and BF16 Candle execution.
+
+### Instrumented native cached breakdown
+
+The same 100-token native cached run took 78.503 seconds with CUDA-event timing
+enabled, compared with 30.882 seconds without it. This difference demonstrates
+that per-operation event synchronization materially changes execution. The
+following values describe the instrumented run, not an uninstrumented timeline:
+
+| Entry | Instrumented time | Share of 78.503 s |
+| --- | ---: | ---: |
+| Linear CUDA events | 55.907 s | 71.2% |
+| Tensor allocation host time | 5.892 s | 7.5% |
+| RMSNorm CUDA events | 3.116 s | 4.0% |
+| Softmax CUDA events | 1.518 s | 1.9% |
+| Batched matmul CUDA events | 1.447 s | 1.8% |
+| Direct layout CUDA events | 1.303 s | 1.7% |
+| Elementwise multiplication CUDA events | 0.567 s | 0.7% |
+
+The run recorded 19,700 linear calls, 126,500 tensor allocations, and
+48,242,611,600 bytes of cumulative tensor allocation. Direct layout no longer
+builds host index maps; its remaining cost is small relative to linear arithmetic
+and allocation in this instrumented profile.
+
+### Updated priorities
+
+1. Profile linear and attention arithmetic without adding synchronization to
+   every operation; use an application-level CUDA event pair or an external
+   profiler for a less distorted timeline.
+2. Introduce safe workspace reuse to reduce the 126,500 allocations and their
+   host cost.
+3. Improve RMSNorm/softmax and batched attention after arithmetic timing is
+   confirmed.
+4. Continue using longer fixed-token runs for basic/cache comparisons.
+5. Keep the fair wall-clock comparison separate from the instrumented breakdown.
+
 ## Current execution paths
 
 ### Basic generation recomputes the sequence
@@ -54,6 +225,46 @@ The native model uses layout operations throughout RoPE and attention:
 
 These operations run across 28 layers. A small fixed overhead is therefore
 multiplied by layer count, token count, and—on the basic path—sequence length.
+
+## Problem primer: what is host index construction?
+
+**Host** means the CPU side of the program. **Device** means the GPU. An index is
+just the position of a value in a tensor's flat storage; it is not a token ID.
+
+A layout operation often only changes which existing value belongs at each output
+position. For example, transposing this row-major matrix:
+
+```text
+input:  [1, 2, 3]
+        [4, 5, 6]
+```
+
+has flat input storage `[1, 2, 3, 4, 5, 6]`. Its transposed output is:
+
+```text
+output: [1, 4]
+        [2, 5]
+        [3, 6]
+```
+
+One way to compute the output on a GPU is to provide a source position for every
+output element:
+
+```text
+source indices: [0, 3, 1, 4, 2, 5]
+```
+
+The gather kernel then performs `output[i] = input[source_indices[i]]`.
+
+Our current implementation builds that entire index array in MoonBit on the CPU,
+copies it to the GPU, and only then runs the gather. This is **host index
+construction**. The actual GPU copy is cheap; building millions of coordinates
+and indices with CPU loops is the dominant measured cost.
+
+A direct layout kernel can instead compute the source position from the output
+position, shape, and strides inside the GPU kernel. That avoids constructing,
+storing, and transferring a separate index array. This is why direct layout
+kernels are the first planned optimization.
 
 ## Specific implementation costs
 

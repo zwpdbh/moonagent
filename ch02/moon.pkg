@@ -4,6 +4,8 @@ import {
   "zw/utils",
   "moonbitlang/core/debug",
   "moonbitlang/core/bench",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
   "chnlkw/moonxi-net/nparray",
   "moonbitlang/async",
   "chnlkw/moonxi-net-gpu/tensor" @gt,

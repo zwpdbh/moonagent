@@ -46,6 +46,34 @@ fn prepare_native_prompt(
 }
 
 ///|
+fn native_profile_enabled() -> Bool {
+  match @env.get_env_var("MOONXI_LLM_PROFILE") {
+    Some(value) => value == "1" || value == "true"
+    None => false
+  }
+}
+
+///|
+fn native_max_tokens() -> Int32 raise Ch02Error {
+  match @env.get_env_var("MOONXI_MAX_TOKENS") {
+    Some(value) =>
+      @string.parse_int(value) catch {
+        _ => raise InvalidArgumentValue("MOONXI_MAX_TOKENS must be an integer")
+      }
+    None => 100
+  }
+}
+
+///|
+fn native_use_cuda() -> Bool {
+  match @env.get_env_var("MOONXI_DEVICE") {
+    Some("cpu") => false
+    Some("cuda") => true
+    _ => @cuda.device_count() > 0
+  }
+}
+
+///|
 async fn[T : @qwen3.NativeTensor] run_native_basic(
   model : @qwen3.NativeQwen3Model[T],
   input_ids : Array[Int32],
@@ -60,10 +88,12 @@ async fn[T : @qwen3.NativeTensor] run_native_basic(
     }
   }
 
+  let profiling = native_profile_enabled()
+  @gt.llm_profiler().reset(enabled=profiling)
   let stream = generate_native_text_basic_stream(
     model~,
     token_ids=input_ids,
-    max_new_tokens=100,
+    max_new_tokens=native_max_tokens(),
     eos_token_id=Some(151645),
   ) catch {
     error => raise InvalidArgumentValue(error.to_string())
@@ -87,13 +117,16 @@ async fn[T : @qwen3.NativeTensor] run_native_basic(
   println(
     "\nGenerated \{generated.length()} tokens in \{elapsed_seconds} seconds (\{tokens_per_second} tokens/sec)",
   )
+  if profiling {
+    @gt.llm_profiler().print()
+  }
 }
 
 ///|
 pub async fn run_ch02_ex01(text : String) -> Unit raise Ch02Error {
   let (input_ids, tokenizer) = prepare_native_prompt(text)
   let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
-  if @cuda.device_count() > 0 {
+  if native_use_cuda() {
     println("Using device: cuda")
     @cuda.gpu_init(0)
     let model : @qwen3.NativeQwen3Model[@gt.GpuTensor] = @qwen3.NativeQwen3Model::load(
@@ -119,26 +152,40 @@ fn[T : @qwen3.NativeTensor] run_native_cached(
   input_ids : Array[Int32],
   tokenizer : @qwen3.Tokenizer,
 ) -> Unit raise Ch02Error {
+  let profiling = native_profile_enabled()
+  @gt.llm_profiler().reset(enabled=profiling)
+  let started_at = @bench.monotonic_clock_start()
   let generated = generate_native_text_basic_stream_cache(
     model~,
     token_ids=input_ids,
-    max_new_tokens=100,
+    max_new_tokens=native_max_tokens(),
     eos_token_id=Some(151645),
   ).collect() catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
+  let elapsed_seconds = @bench.monotonic_clock_end(started_at) / 1_000_000.0
   let output = tokenizer.decode(generated) catch {
     error => raise InvalidArgumentValue(error.to_string())
   }
   println(output)
-  println("\nGenerated \{generated.length()} tokens")
+  let tokens_per_second = if elapsed_seconds > 0.0 {
+    generated.length().to_double() / elapsed_seconds
+  } else {
+    0.0
+  }
+  println(
+    "\nGenerated \{generated.length()} tokens in \{elapsed_seconds} seconds (\{tokens_per_second} tokens/sec)",
+  )
+  if profiling {
+    @gt.llm_profiler().print()
+  }
 }
 
 ///|
 pub async fn run_ch02_ex02(text : String) -> Unit raise Ch02Error {
   let (input_ids, tokenizer) = prepare_native_prompt(text)
   let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
-  if @cuda.device_count() > 0 {
+  if native_use_cuda() {
     println("Using device: cuda")
     @cuda.gpu_init(0)
     let model : @qwen3.NativeQwen3Model[@gt.GpuTensor] = @qwen3.NativeQwen3Model::load(
