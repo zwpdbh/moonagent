@@ -8,4 +8,5 @@ members = [
   "./educational/safetensors",
   "../forked/python.mbt",
   "../forked/clap.mbt",
+  "../forked/moonxi-net/moonxi-net",
 ]

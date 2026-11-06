@@ -2,6 +2,7 @@
 package "zw/qwen3"
 
 import {
+  "chnlkw/moonxi-net/nparray",
   "zw/torch",
 }
 
@@ -9,6 +10,8 @@ import {
 pub fn apply_rope(input~ : @torch.Tensor, position~ : Int32, rope_theta~ : Float) -> @torch.Tensor raise @torch.TorchError
 
 pub fn grouped_query_attention(queries~ : @torch.Tensor, keys~ : @torch.Tensor, values~ : @torch.Tensor) -> @torch.Tensor raise @torch.TorchError
+
+pub fn native_linear_projection(input~ : @nparray.NpArray, weight~ : @nparray.NpArray) -> @nparray.NpArray
 
 // Errors
 pub(all) suberror ConfigError {
