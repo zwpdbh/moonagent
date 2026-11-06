@@ -11,6 +11,9 @@ The existing `zw/torch` PyTorch bridge remains available as a reference and test
 oracle during migration. Native inference must not initialize CPython or require
 `PYTHONPATH`.
 
+Performance analysis and optimization work are tracked separately in
+`docs/native-qwen3-performance-plan.md`.
+
 ## Current baseline
 
 - The Qwen3 tokenizer and generation algorithms already run in MoonBit.
