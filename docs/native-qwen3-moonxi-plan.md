@@ -52,6 +52,15 @@ Do not add Qwen names, tokenizer behavior, or generation policy to
 Goal: prove that the compiler fork is unnecessary before relying on the GPU
 backend for Qwen3.
 
+**Status: completed.** `scripts/build_cuda_kernels.sh` compiles the CUDA source
+with `nvcc` and caches a static library under `_build/cuda`. Standard MoonBit
+compiles the C stub; `moonxi-net-gpu/build_config.js` propagates native linking
+settings to dependents. A
+clean build of the GPU linear example ran successfully and learned approximately
+`w=3`, `b=1`; the CPU tests also pass. Explicit `cuInit(0)` was needed to make
+cuBLAS/cuDNN initialization reliable in this environment. No compiler fork is
+used.
+
 ### Changes in `moonxi-net`
 
 1. Add a reproducible CUDA build script for
@@ -67,12 +76,12 @@ backend for Qwen3.
 2. Change `moonxi-net-gpu/cuda/moon.pkg`:
    - Keep `cuda_stub.c` as the only C native stub.
    - Remove `cuda_kernels.cu` from `native-stub` and remove `nvcc-flags`.
-   - Link the prebuilt kernel library plus `cudart`, `cublas`, `cudnn`, and
-     `stdc++`.
+   - Link the prebuilt kernel library plus `cuda`, `cudart`, `cublas`, `cudnn`,
+     and `stdc++`.
    - Verify how package-relative native library search paths are resolved; do
      not hard-code a user-specific build path.
-3. Keep CUDA initialization, FFI signatures, and tensor APIs unchanged during
-   this build-system migration.
+3. Keep FFI signatures and tensor APIs unchanged during this build-system
+   migration. Add explicit CUDA driver initialization if required by the host.
 4. Document the two-step build: run the CUDA script, then use ordinary `moon`
    commands. CPU-only users must not need `nvcc`, CUDA, or cuDNN.
 
@@ -97,6 +106,13 @@ later cleanup.
 
 Goal: support a complete Qwen3 forward pass using `NpArray` and F32, without
 CPython.
+
+**Status: completed for Qwen3 inference.** `moonxi-net/nparray/llm.mbt` now
+provides copying implementations of permutation, slicing, selection,
+concatenation, broadcasting, KV repetition, batched matmul, linear projection,
+stable softmax, integer-ID embedding, SiLU, RMSNorm, masking, and argmax. Generic
+unit tests cover multi-batch arithmetic and cache-style indexing. The native
+model uses these operations directly; no autograd wrapper is involved.
 
 ### Changes in `moonxi-net`
 
@@ -134,6 +150,12 @@ Implement operations with explicit rank/shape validation and generic tests:
 
 Goal: generate text using only MoonBit, native tensor operations, and the local
 model cache.
+
+**Status: completed.** `NativeQwen3Model` loads the BF16 safetensors checkpoint
+as F32 `NpArray` weights and implements the complete forward pass, RoPE, grouped
+attention, MLP, and KV cache. `ch02` provides native basic and cached lazy token
+streams. Real-checkpoint tests verify the first token and that both generation
+paths produce `"<think>\nOkay,"`; no Python runtime is used.
 
 ### Changes in `moonagent`
 

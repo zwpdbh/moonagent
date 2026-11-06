@@ -30,4 +30,6 @@ import {
   "zw/utils@0.1.0",
   "zw/torch@0.1.0",
   "chnlkw/moonxi-net@0.1.1",
+  "zw/safetensors@0.1.0",
+  "moonbitlang/async@0.22.4",
 }

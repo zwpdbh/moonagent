@@ -26,3 +26,33 @@ test "basic stream generates the expected prefix" {
   }
   assert_eq(text, "<think>\nOkay,")
 }
+
+///|
+async test "native basic and cached streams generate the same prefix" {
+  let model_dir = "/home/zw/.cache/models/Qwen/Qwen3-0.6B"
+  let model = @qwen3.NativeQwen3Model::load(model_dir)
+  let tokenizer = @qwen3.Tokenizer::load(model_dir + "/tokenizer.json") catch {
+    _ => abort("failed to load tokenizer")
+  }
+  let prompt = "<|im_start|>user\nExplain large language models.<|im_end|>\n<|im_start|>assistant\n"
+  let input_ids = tokenizer.encode(prompt) catch {
+    _ => abort("failed to encode prompt")
+  }
+  let basic = @ch02.generate_native_text_basic_stream(
+    model~,
+    token_ids=input_ids,
+    max_new_tokens=4,
+    eos_token_id=None,
+  ).collect()
+  let cached = @ch02.generate_native_text_basic_stream_cache(
+    model~,
+    token_ids=input_ids,
+    max_new_tokens=4,
+    eos_token_id=None,
+  ).collect()
+  assert_eq(basic, cached)
+  let text = tokenizer.decode(cached) catch {
+    _ => abort("failed to decode generated tokens")
+  }
+  assert_eq(text, "<think>\nOkay,")
+}

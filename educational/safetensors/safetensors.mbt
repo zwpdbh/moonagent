@@ -61,6 +61,20 @@ pub(all) suberror SafeTensorsError {
 } derive(Debug)
 
 ///|
+pub impl Show for SafeTensorsError with fn output(self, logger) {
+  match self {
+    InvalidFormat(message) => logger.write_string("invalid format: " + message)
+    UnknowTensor(name) => logger.write_string("unknown tensor: " + name)
+    UnsupportedDtype(message) =>
+      logger.write_string("unsupported dtype: " + message)
+    DtypeNotMatch(message) => logger.write_string("dtype mismatch: " + message)
+  }
+}
+
+///|
+pub extend SafeTensorsError with Show::{to_string, output}
+
+///|
 pub extend SafeTensorsError with @debug.Debug::{to_repr}
 
 ///|

@@ -233,3 +233,101 @@ pub fn generate_text_basic_stream_cache(
     generated
   })
 }
+
+///|
+fn native_next_id(logits : @nparray.NpArray) -> Int32 {
+  let sequence_length = logits.shape.shape[1]
+  logits.select(dim=1, index=sequence_length - 1).argmax_last().data[0].to_int()
+}
+
+///|
+/// Generate greedily with native CPU tensors and no KV cache.
+pub fn generate_native_text_basic_stream(
+  model~ : @qwen3.NativeQwen3Model,
+  token_ids~ : Array[Int32],
+  max_new_tokens~ : Int32,
+  eos_token_id~ : Int32?,
+) -> @utils.LazyGenerator[Int32, @qwen3.NativeQwen3Error] raise @qwen3.NativeQwen3Error {
+  if token_ids.is_empty() {
+    raise InvalidModel("generation requires at least one input token")
+  }
+  if max_new_tokens < 0 {
+    raise InvalidModel("max_new_tokens must not be negative")
+  }
+
+  let input = token_ids.copy()
+  let mut remaining = max_new_tokens
+  fn next_token() -> Result[Int32?, @qwen3.NativeQwen3Error] {
+    if remaining == 0 {
+      return Ok(None)
+    }
+    let result = try {
+      let next_id = native_next_id(model.forward(input~, cache=None))
+      if eos_token_id is Some(eos_id) && next_id == eos_id {
+        remaining = 0
+        return Ok(None)
+      }
+      input.push(next_id)
+      remaining -= 1
+      Ok(Some(next_id))
+    } catch {
+      error => Err(error)
+    }
+    result
+  }
+  @utils.lazy_generator(next_token)
+}
+
+///|
+/// Generate greedily with native CPU tensors and a KV cache.
+pub fn generate_native_text_basic_stream_cache(
+  model~ : @qwen3.NativeQwen3Model,
+  token_ids~ : Array[Int32],
+  max_new_tokens~ : Int32,
+  eos_token_id~ : Int32?,
+) -> @utils.LazyGenerator[Int32, @qwen3.NativeQwen3Error] raise @qwen3.NativeQwen3Error {
+  if token_ids.is_empty() {
+    raise InvalidModel("generation requires at least one input token")
+  }
+  if max_new_tokens < 0 {
+    raise InvalidModel("max_new_tokens must not be negative")
+  }
+
+  let cache = model.new_cache()
+  let mut next_input = Some(token_ids)
+  let mut logits : @nparray.NpArray? = None
+  let mut remaining = max_new_tokens
+  let mut initialized = false
+  fn next_token() -> Result[Int32?, @qwen3.NativeQwen3Error] {
+    if remaining == 0 {
+      return Ok(None)
+    }
+    let result = try {
+      if !initialized {
+        model.reset_kv_cache()
+        initialized = true
+      }
+      if next_input is Some(input) {
+        logits = Some(model.forward(input~, cache=Some(cache)))
+        next_input = None
+      }
+      guard logits is Some(current_logits) else {
+        raise @qwen3.NativeQwen3Error::InvalidModel(
+          "cached generation has no logits",
+        )
+      }
+      let next_id = native_next_id(current_logits)
+      if eos_token_id is Some(eos_id) && next_id == eos_id {
+        remaining = 0
+        return Ok(None)
+      }
+      next_input = Some([next_id])
+      remaining -= 1
+      Ok(Some(next_id))
+    } catch {
+      error => Err(error)
+    }
+    result
+  }
+  @utils.lazy_generator(next_token)
+}

@@ -3,6 +3,7 @@ package "zw/qwen3"
 
 import {
   "chnlkw/moonxi-net/nparray",
+  "moonbitlang/core/debug",
   "zw/torch",
 }
 
@@ -17,6 +18,14 @@ pub fn native_linear_projection(input~ : @nparray.NpArray, weight~ : @nparray.Np
 pub(all) suberror ConfigError {
   InvalidFormat(String)
 }
+
+pub(all) suberror NativeQwen3Error {
+  InvalidModel(String)
+} derive(@debug.Debug)
+pub fn NativeQwen3Error::output(Self, &Logger) -> Unit
+pub fn NativeQwen3Error::to_repr(Self) -> @debug.Repr
+pub fn NativeQwen3Error::to_string(Self) -> String
+pub impl Show for NativeQwen3Error
 
 pub(all) suberror TokenizerError {
   InvalidFormat(String)
@@ -65,6 +74,23 @@ pub struct KVCache {
   // private fields
 }
 pub fn KVCache::new(n_layers~ : Int32) -> Self
+
+pub struct NativeKVCache {
+  // private fields
+}
+pub fn NativeKVCache::new(n_layers~ : Int32) -> Self
+
+pub struct NativeQwen3Model {
+  config : Config
+  weights : Map[String, @nparray.NpArray]
+  cos : @nparray.NpArray
+  sin : @nparray.NpArray
+  mut current_pos : Int32
+}
+pub fn NativeQwen3Model::forward(Self, input~ : Array[Int32], cache~ : NativeKVCache?) -> @nparray.NpArray raise NativeQwen3Error
+pub async fn NativeQwen3Model::load(String) -> Self raise NativeQwen3Error
+pub fn NativeQwen3Model::new_cache(Self) -> NativeKVCache
+pub fn NativeQwen3Model::reset_kv_cache(Self) -> Unit
 
 pub struct Qwen3Model {
   config : Config

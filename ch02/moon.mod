@@ -30,4 +30,6 @@ import {
   "zw/qwen3@0.1.0",
   "TheWaWaR/clap@0.2.6",
   "zw/utils@0.1.0",
+  "chnlkw/moonxi-net@0.1.1",
+  "moonbitlang/async@0.22.4",
 }

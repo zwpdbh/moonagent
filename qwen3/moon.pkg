@@ -5,9 +5,14 @@ import {
   "moonbitlang/core/string",
   "moonbitlang/core/math",
   "moonbitlang/core/double",
+  "moonbitlang/core/debug",
   "zw/utils",
   "zw/torch",
   "chnlkw/moonxi-net/nparray",
+  "zw/safetensors",
+  "moonbitlang/async",
 }
+
+warnings = "-unused_package"
 
 supported_targets = "native"

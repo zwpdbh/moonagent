@@ -4,6 +4,10 @@ import {
   "zw/utils",
   "moonbitlang/core/debug",
   "moonbitlang/core/bench",
+  "chnlkw/moonxi-net/nparray",
+  "moonbitlang/async",
 }
+
+warnings = "-unused_package"
 
 supported_targets = "native"

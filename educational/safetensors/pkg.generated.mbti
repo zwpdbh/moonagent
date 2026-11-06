@@ -14,7 +14,10 @@ pub(all) suberror SafeTensorsError {
   UnsupportedDtype(String)
   DtypeNotMatch(String)
 } derive(@debug.Debug)
+pub fn SafeTensorsError::output(Self, &Logger) -> Unit
 pub fn SafeTensorsError::to_repr(Self) -> @debug.Repr
+pub fn SafeTensorsError::to_string(Self) -> String
+pub impl Show for SafeTensorsError
 
 // Types and methods
 pub enum DType {
