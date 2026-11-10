@@ -28,4 +28,5 @@ description = "Educational native safetensors reader"
 import {
   "moonbitlang/async@0.22.4",
   "moonbitlang/x@0.5.5",
+  "moonbit-community/serde.mbt@0.3.1",
 }
